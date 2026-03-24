@@ -18,7 +18,8 @@ import {
   Download,
   Send,
   MoreVertical,
-  RefreshCw
+  RefreshCw,
+  Plus
 } from 'lucide-react';
 import { CHARACTERS } from '@/lib/config';
 import { 
@@ -38,6 +39,7 @@ export default function ChatPage() {
   const [isLoading, setIsLoading] = useState(false);
   const [isVoiceMode, setIsVoiceMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [character, setCharacter] = useState<typeof CHARACTERS.uncle | null>(null);
   const [userInfo, setUserInfo] = useState<any>(null);
   
@@ -590,74 +592,227 @@ export default function ChatPage() {
         </div>
       </ScrollArea>
 
-      {/* 功能按钮 */}
-      <div className="bg-white border-t px-4 py-2">
-        <div className="max-w-2xl mx-auto flex justify-center gap-4 mb-2">
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleGenerateImage}
-            disabled={isLoading}
-            className="text-pink-500 border-pink-200 hover:bg-pink-50"
-          >
-            <ImageIcon className="w-4 h-4 mr-1" />
-            自拍
-          </Button>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={handleGenerateVideo}
-            disabled={isLoading}
-            className="text-purple-500 border-purple-200 hover:bg-purple-50"
-          >
-            <Video className="w-4 h-4 mr-1" />
-            跳舞
-          </Button>
-          <Button
-            variant={isVoiceMode ? 'default' : 'outline'}
-            size="sm"
-            onClick={() => setIsVoiceMode(!isVoiceMode)}
-            className={isVoiceMode ? 'bg-green-500 hover:bg-green-600' : 'text-green-500 border-green-200'}
-          >
-            <Mic className="w-4 h-4 mr-1" />
-            {isVoiceMode ? '语音模式' : '语音通话'}
-          </Button>
-        </div>
-      </div>
-
-      {/* 输入区域 */}
-      <div className="bg-white border-t px-4 py-3 pb-safe">
-        <div className="max-w-2xl mx-auto flex items-center gap-2">
-          <Input
-            ref={inputRef}
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-            placeholder={isVoiceMode ? '点击麦克风开始录音' : '发送消息...'}
-            disabled={isLoading}
-            className="flex-1"
-          />
+      {/* 消息区域 */}
+      <ScrollArea className={`flex-1 p-4 ${showMoreMenu ? 'hidden' : ''}`}>
+        <div className="max-w-2xl mx-auto space-y-4">
+          {messages.map((msg) => (
+            <div
+              key={msg.id}
+              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
+            >
+              <div
+                className={`max-w-[70%] rounded-2xl px-4 py-2 ${
+                  msg.role === 'user'
+                    ? 'bg-pink-500 text-white'
+                    : 'bg-white text-gray-800 shadow-sm'
+                }`}
+              >
+                {/* 文字内容 */}
+                <p className="whitespace-pre-wrap">{msg.content}</p>
+                
+                {/* 图片 */}
+                {msg.type === 'image' && msg.mediaUrl && (
+                  <div className="mt-2">
+                    <img
+                      src={msg.mediaUrl}
+                      alt="AI男友自拍"
+                      className="rounded-lg max-w-full"
+                    />
+                  </div>
+                )}
+                
+                {/* 视频 */}
+                {msg.type === 'video' && msg.mediaUrl && (
+                  <div className="mt-2">
+                    <video
+                      src={msg.mediaUrl}
+                      controls
+                      className="rounded-lg max-w-full"
+                    />
+                  </div>
+                )}
+                
+                {/* 时间 */}
+                <div className={`text-xs mt-1 ${
+                  msg.role === 'user' ? 'text-pink-100' : 'text-gray-400'
+                }`}>
+                  {new Date(msg.timestamp).toLocaleTimeString('zh-CN', {
+                    hour: '2-digit',
+                    minute: '2-digit',
+                  })}
+                </div>
+              </div>
+            </div>
+          ))}
           
-          {isVoiceMode ? (
+          {isLoading && (
+            <div className="flex justify-start">
+              <div className="bg-white rounded-2xl px-4 py-2 shadow-sm">
+                <div className="flex gap-1">
+                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
+                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
+                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
+                </div>
+              </div>
+            </div>
+          )}
+          
+          <div ref={messagesEndRef} />
+        </div>
+      </ScrollArea>
+
+      {/* 微信风格更多功能菜单 */}
+      {showMoreMenu && (
+        <div className="flex-1 bg-gray-100 p-4">
+          <div className="max-w-2xl mx-auto">
+            <div className="grid grid-cols-4 gap-4">
+              {/* 语音通话 */}
+              <button
+                onClick={() => {
+                  setIsVoiceMode(true);
+                  setShowMoreMenu(false);
+                }}
+                className="flex flex-col items-center gap-2 p-2"
+              >
+                <div className="w-14 h-14 rounded-xl bg-green-500 flex items-center justify-center">
+                  <Mic className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-xs text-gray-600">语音通话</span>
+              </button>
+
+              {/* 自拍 */}
+              <button
+                onClick={() => {
+                  handleGenerateImage();
+                  setShowMoreMenu(false);
+                }}
+                className="flex flex-col items-center gap-2 p-2"
+              >
+                <div className="w-14 h-14 rounded-xl bg-pink-500 flex items-center justify-center">
+                  <ImageIcon className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-xs text-gray-600">自拍</span>
+              </button>
+
+              {/* 跳舞 */}
+              <button
+                onClick={() => {
+                  handleGenerateVideo();
+                  setShowMoreMenu(false);
+                }}
+                className="flex flex-col items-center gap-2 p-2"
+              >
+                <div className="w-14 h-14 rounded-xl bg-purple-500 flex items-center justify-center">
+                  <Video className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-xs text-gray-600">跳舞</span>
+              </button>
+
+              {/* 分享 */}
+              <button
+                onClick={() => {
+                  handleShare();
+                  setShowMoreMenu(false);
+                }}
+                className="flex flex-col items-center gap-2 p-2"
+              >
+                <div className="w-14 h-14 rounded-xl bg-blue-500 flex items-center justify-center">
+                  <Share2 className="w-6 h-6 text-white" />
+                </div>
+                <span className="text-xs text-gray-600">分享</span>
+              </button>
+            </div>
+
+            {/* 取消按钮 */}
+            <button
+              onClick={() => setShowMoreMenu(false)}
+              className="w-full mt-6 py-3 bg-white rounded-lg text-gray-600 text-center"
+            >
+              取消
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* 语音通话模式 */}
+      {isVoiceMode && (
+        <div className="flex-1 bg-gray-100 flex flex-col items-center justify-center p-4">
+          <Avatar className="w-24 h-24 mb-4">
+            <AvatarFallback className="bg-gradient-to-br from-pink-300 to-purple-400 text-4xl">
+              {character.id === 'uncle' && '👨'}
+              {character.id === 'sunshine' && '👦'}
+              {character.id === 'straight_man' && '🤓'}
+            </AvatarFallback>
+          </Avatar>
+          <h2 className="text-xl font-semibold text-gray-800 mb-2">{character.name}</h2>
+          <p className="text-gray-500 mb-8">{isRecording ? '正在录音...' : '点击麦克风开始说话'}</p>
+          
+          <div className="flex items-center gap-8">
+            <Button
+              onClick={() => setIsVoiceMode(false)}
+              variant="outline"
+              className="rounded-full w-16 h-16 border-gray-300"
+            >
+              <PhoneOff className="w-6 h-6 text-gray-600" />
+            </Button>
+            
             <Button
               onMouseDown={startRecording}
               onMouseUp={stopRecording}
               onMouseLeave={stopRecording}
-              className={`${isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}`}
+              className={`rounded-full w-20 h-20 ${isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}`}
             >
-              {isRecording ? <MicOff className="w-5 h-5" /> : <Mic className="w-5 h-5" />}
+              {isRecording ? <MicOff className="w-8 h-8" /> : <Mic className="w-8 h-8" />}
             </Button>
-          ) : (
+            
+            <Button
+              variant="outline"
+              className="rounded-full w-16 h-16 border-gray-300"
+              onClick={() => {
+                // 发送文字消息
+              }}
+            >
+              <Send className="w-6 h-6 text-gray-600" />
+            </Button>
+          </div>
+          
+          <p className="text-gray-400 text-sm mt-8">松开麦克风结束录音</p>
+        </div>
+      )}
+
+      {/* 输入区域 - 仅在非语音模式和菜单关闭时显示 */}
+      {!isVoiceMode && !showMoreMenu && (
+        <div className="bg-white border-t px-4 py-3 pb-safe">
+          <div className="max-w-2xl mx-auto flex items-center gap-2">
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => setShowMoreMenu(true)}
+              className="shrink-0"
+            >
+              <Plus className="w-6 h-6" />
+            </Button>
+            
+            <Input
+              ref={inputRef}
+              value={inputText}
+              onChange={(e) => setInputText(e.target.value)}
+              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+              placeholder="发送消息..."
+              disabled={isLoading}
+              className="flex-1"
+            />
+            
             <Button 
               onClick={handleSendMessage}
               disabled={!inputText.trim() || isLoading}
-              className="bg-pink-500 hover:bg-pink-600"
+              className="bg-pink-500 hover:bg-pink-600 shrink-0"
             >
               <Send className="w-5 h-5" />
             </Button>
-          )}
+          </div>
         </div>
-      </div>
+      )}
     </div>
   );
 }
