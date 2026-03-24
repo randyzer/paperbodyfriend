@@ -11,27 +11,58 @@ const MENTAL_HEALTH_KEYWORDS = [
   '活不下去了', '没有希望', '绝望'
 ];
 
-// 用户想看媒体的关键词
+// 用户想看媒体的关键词 - 优先级从高到低
 const MEDIA_KEYWORDS = {
-  selfie: ['自拍', '照片', '看看你', '发张照片', '发个照片', '你的照片', '想看你', '晒一下', '晒晒', '发张照', '照片看看'],
-  dance: ['跳舞', '舞', '跳个舞', '看你跳舞', '跳舞视频', '舞步', '秀一下舞', '来段舞'],
-  workout: ['运动', '健身', '锻炼', '健身视频', '看你运动', '运动视频', '秀肌肉', '健身房']
+  // 跳舞视频关键词（优先级最高）
+  dance: [
+    '跳舞视频', '跳舞的视频', '跳个舞视频', '跳舞给你看', '看你跳舞', 
+    '想看你跳', '给我跳舞', '跳一段舞', '来段舞', '来个舞蹈',
+    '跳舞', '跳个舞', '跳舞吧', '舞一下', '秀一下舞', '舞步',
+    '来跳舞', '一起跳舞', '跳支舞', '跳个舞给我', '给我跳',
+    '舞蹈视频', '跳舞看', '看跳舞'
+  ],
+  // 运动健身视频关键词
+  workout: [
+    '健身视频', '健身给你看', '看你健身', '看你运动', '运动视频',
+    '健身', '运动', '锻炼', '健身房', '秀肌肉', '健身给你',
+    '运动给我看', '健身看看', '锻炼视频', '运动的视频'
+  ],
+  // 自拍照片关键词
+  selfie: [
+    '自拍', '发张自拍', '发个自拍', '自拍看看', '自拍给我看',
+    '照片', '发张照片', '发个照片', '照片看看', '你的照片',
+    '看看你', '想看你', '晒一下', '晒晒', '发张照', '照片给我',
+    '拍张照', '拍个照', '自拍吧', '来张自拍', '发个照',
+    '你的自拍', '看照片', '看自拍', '发照片'
+  ]
 };
 
-// 检测用户意图
+// 检测用户意图 - 按优先级检测
 function detectMediaIntent(userMessage: string): 'selfie' | 'dance' | 'workout' | null {
   const msg = userMessage.toLowerCase();
   
+  // 优先检测跳舞（因为用户明确提到"跳舞"或"舞蹈"）
   for (const keyword of MEDIA_KEYWORDS.dance) {
-    if (msg.includes(keyword)) return 'dance';
+    if (msg.includes(keyword)) {
+      console.log(`[Media Intent] Detected dance: "${keyword}" in "${msg}"`);
+      return 'dance';
+    }
   }
   
+  // 然后检测运动健身
   for (const keyword of MEDIA_KEYWORDS.workout) {
-    if (msg.includes(keyword)) return 'workout';
+    if (msg.includes(keyword)) {
+      console.log(`[Media Intent] Detected workout: "${keyword}" in "${msg}"`);
+      return 'workout';
+    }
   }
   
+  // 最后检测自拍照片
   for (const keyword of MEDIA_KEYWORDS.selfie) {
-    if (msg.includes(keyword)) return 'selfie';
+    if (msg.includes(keyword)) {
+      console.log(`[Media Intent] Detected selfie: "${keyword}" in "${msg}"`);
+      return 'selfie';
+    }
   }
   
   return null;
@@ -68,9 +99,15 @@ export async function POST(request: NextRequest) {
 
     // 如果用户想看媒体，添加提示
     if (mediaIntent) {
+      const mediaTypeText = mediaIntent === 'selfie' ? '照片/自拍' : mediaIntent === 'dance' ? '跳舞视频' : '运动/健身视频';
       systemPrompt += `
 
-【重要】用户想看你的${mediaIntent === 'selfie' ? '照片/自拍' : mediaIntent === 'dance' ? '跳舞视频' : '运动/健身视频'}。请用简短的话回应，表示你会发给她看。比如"好，等我一下"或"给你拍一个"。`;
+【重要】用户明确想看你的${mediaTypeText}。
+请直接简短回复表示你会发给她看，比如：
+- "好，给你拍一个"
+- "等我一下"
+- "马上给你发"
+回复完后系统会自动发送${mediaTypeText}。`;
     }
 
     // 如果检测到心理健康问题，添加引导提示
@@ -116,10 +153,9 @@ export async function POST(request: NextRequest) {
       temperature: 0.8,
     });
 
-    // 判断是否应该主动发送媒体（每10-20轮对话）
+    // 判断是否应该主动发送媒体（每15轮对话）
     let autoMedia: 'selfie' | 'dance' | 'workout' | null = null;
     if (!mediaIntent && messageCount > 0 && messageCount % 15 === 0) {
-      // 每15轮对话主动发一次
       const rand = Math.random();
       if (rand < 0.4) {
         autoMedia = 'selfie';
@@ -144,6 +180,7 @@ export async function POST(request: NextRequest) {
           // 在流末尾添加媒体标记（如果需要）
           const finalMedia = mediaIntent || autoMedia;
           if (finalMedia) {
+            console.log(`[Media] Sending media marker: [MEDIA:${finalMedia}]`);
             controller.enqueue(encoder.encode(`[MEDIA:${finalMedia}]`));
           }
           
