@@ -5,7 +5,7 @@ export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
-    const { prompt, characterName = '男生' } = await request.json();
+    const { prompt, referenceImage } = await request.json();
     
     if (!prompt) {
       return NextResponse.json(
@@ -21,9 +21,10 @@ export async function POST(request: NextRequest) {
     const config = new Config();
     const client = new ImageGenerationClient(config, customHeaders);
 
-    // 生成图像
+    // 生成图像（支持图生图）
     const response = await client.generate({
       prompt,
+      image: referenceImage, // 参考图片URL，用于保持风格一致
       size: '2K',
       watermark: true,
     });

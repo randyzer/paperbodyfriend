@@ -237,16 +237,14 @@ ${weather.advice}
     const charId = character.id as CharId;
     
     try {
-      const prompts: Record<CharId, string> = {
-        uncle: '一个成熟稳重的中年男性自拍照片，深邃的眼神，穿着休闲衬衫，高清写真风格，阳光背景',
-        sunshine: '一个阳光帅气的年轻男性自拍照片，灿烂的笑容，穿着时尚，高清写真风格',
-        straight_man: '一个斯文的年轻男性自拍照片，略带腼腆的表情，穿着简约，高清写真风格'
-      };
-      
+      // 使用角色的自拍prompt，并传入头像作为参考图片保持风格一致
       const response = await fetch('/api/image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompts[charId] }),
+        body: JSON.stringify({ 
+          prompt: character.selfiePrompt,
+          referenceImage: character.avatar
+        }),
       });
 
       const data = await response.json();
@@ -288,16 +286,15 @@ ${weather.advice}
     const charId = character.id as CharId;
     
     try {
-      const prompts: Record<CharId, string> = {
-        uncle: '一个成熟稳重的中年男性正在跳舞，动作优雅从容，表情自信',
-        sunshine: '一个阳光帅气的年轻男性正在跳舞，动作充满活力，笑容灿烂',
-        straight_man: '一个斯文的年轻男性正在跳舞，动作有点笨拙但很认真'
-      };
-      
+      // 使用角色的跳舞prompt，并传入头像作为首帧保持人物一致
       const response = await fetch('/api/video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompts[charId], duration: 5 }),
+        body: JSON.stringify({ 
+          prompt: character.dancePrompt,
+          duration: 5,
+          firstFrameUrl: character.avatar
+        }),
       });
 
       const data = await response.json();
@@ -339,16 +336,15 @@ ${weather.advice}
     const charId = character.id as CharId;
     
     try {
-      const prompts: Record<CharId, string> = {
-        uncle: '一个成熟稳重的中年男性正在健身房运动，举哑铃，表情专注',
-        sunshine: '一个阳光帅气的年轻男性正在健身房运动，充满活力，汗水和笑容',
-        straight_man: '一个斯文的年轻男性正在健身房运动，动作认真，有点吃力'
-      };
-      
+      // 使用角色的运动prompt，并传入头像作为首帧保持人物一致
       const response = await fetch('/api/video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt: prompts[charId], duration: 5 }),
+        body: JSON.stringify({ 
+          prompt: character.workoutPrompt,
+          duration: 5,
+          firstFrameUrl: character.avatar
+        }),
       });
 
       const data = await response.json();

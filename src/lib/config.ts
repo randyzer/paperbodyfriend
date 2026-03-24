@@ -6,6 +6,9 @@ export const CHARACTERS = {
     title: '沉稳内敛的大叔',
     description: '情绪稳定，善于倾听，会安静的陪着你，愿意做你人生路上的引路人',
     avatar: 'https://coze-coding-project.tos.coze.site/coze_storage_7620644901650333739/image/generate_image_d841160e-a2af-46e2-99c1-13845f3fb586.jpeg?sign=1805871541-5ea2b3e0e5-0-0a1e98146c32e6ac93d1d1d98dc9cd092a8a648ee0669c7b9496117fcdf10d3a',
+    selfiePrompt: 'A mature Asian man taking a casual selfie, warm gentle smile, relaxed pose, holding phone at arm length, natural lighting, casual indoor or outdoor background, realistic photo style',
+    dancePrompt: 'A mature Asian man dancing gracefully with smooth elegant movements, confident expression, casual indoor setting, warm lighting',
+    workoutPrompt: 'A mature Asian man exercising at gym, lifting dumbbells with focused expression, athletic wear, gym background',
     prompt: `你是林远山，一个沉稳内敛的中年男人。你情绪稳定，善于倾听，会安静地陪着她。
 
 【关于你】
@@ -38,6 +41,9 @@ export const CHARACTERS = {
     title: '阳光帅气的男孩',
     description: '思维活跃，善于接受新事物，和你对爱好同频，愿意陪你哭，陪你笑，陪你疯',
     avatar: 'https://coze-coding-project.tos.coze.site/coze_storage_7620644901650333739/image/generate_image_256ee5f0-6257-4b66-bbe2-a81b7c7fe1f6.jpeg?sign=1805871542-b5fb0d2f56-0-9826420cf82c3237cd3bf2a9ee240aab041a874cec28b6297e16d530b7b0703c',
+    selfiePrompt: 'A handsome young Asian man taking a cheerful selfie, bright sunny smile, energetic pose, peace sign or fun expression, outdoor sunny background, vibrant and lively mood, realistic photo style',
+    dancePrompt: 'A handsome young Asian man dancing with energetic moves, big bright smile, fun and playful atmosphere, casual clothes, indoor party setting',
+    workoutPrompt: 'A handsome young Asian man exercising at gym, doing push-ups or cardio with high energy, athletic wear, sweating and smiling',
     prompt: `你是江晨曦，一个阳光帅气的年轻男孩。你思维活跃，善于接受新事物，和她爱好同频。
 
 【关于你】
@@ -71,6 +77,9 @@ export const CHARACTERS = {
     title: '不善言辞的直男',
     description: '典型的理工男形象，性格老实耿直，没有太多的心眼，但愿意对你掏心掏肺，给你踏实和心安',
     avatar: 'https://coze-coding-project.tos.coze.site/coze_storage_7620644901650333739/image/generate_image_226d8b71-a24b-4835-ae5f-810e437e6508.jpeg?sign=1805871541-bd55374374-0-8bc9b68ec39c21fc2779925bf81aeea6fb4e872f7ccc7f5f3060730e490c45f4',
+    selfiePrompt: 'A shy Asian man with glasses taking an awkward but sincere selfie, slightly embarrassed expression, simple casual outfit, indoor background, honest and genuine vibe, realistic photo style',
+    dancePrompt: 'A shy Asian man with glasses attempting to dance, slightly awkward but trying his best, simple movements, indoor home setting',
+    workoutPrompt: 'A shy Asian man with glasses exercising at gym, lifting weights with determined but slightly awkward form, gym clothes, focused expression',
     prompt: `你是周默，一个不善言辞的理工男。你性格老实耿直，没有太多的心眼。
 
 【关于你】
