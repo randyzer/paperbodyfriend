@@ -11,9 +11,35 @@ const MENTAL_HEALTH_KEYWORDS = [
   '活不下去了', '没有希望', '绝望'
 ];
 
+// 用户想看媒体的关键词
+const MEDIA_KEYWORDS = {
+  selfie: ['自拍', '照片', '看看你', '发张照片', '发个照片', '你的照片', '想看你', '晒一下', '晒晒', '发张照', '照片看看'],
+  dance: ['跳舞', '舞', '跳个舞', '看你跳舞', '跳舞视频', '舞步', '秀一下舞', '来段舞'],
+  workout: ['运动', '健身', '锻炼', '健身视频', '看你运动', '运动视频', '秀肌肉', '健身房']
+};
+
+// 检测用户意图
+function detectMediaIntent(userMessage: string): 'selfie' | 'dance' | 'workout' | null {
+  const msg = userMessage.toLowerCase();
+  
+  for (const keyword of MEDIA_KEYWORDS.dance) {
+    if (msg.includes(keyword)) return 'dance';
+  }
+  
+  for (const keyword of MEDIA_KEYWORDS.workout) {
+    if (msg.includes(keyword)) return 'workout';
+  }
+  
+  for (const keyword of MEDIA_KEYWORDS.selfie) {
+    if (msg.includes(keyword)) return 'selfie';
+  }
+  
+  return null;
+}
+
 export async function POST(request: NextRequest) {
   try {
-    const { messages, characterPrompt } = await request.json();
+    const { messages, characterPrompt, messageCount = 0 } = await request.json();
     
     if (!messages || !characterPrompt) {
       return NextResponse.json(
@@ -27,6 +53,9 @@ export async function POST(request: NextRequest) {
     const hasMentalHealthKeywords = lastUserMessage && 
       MENTAL_HEALTH_KEYWORDS.some(keyword => lastUserMessage.content?.includes(keyword));
 
+    // 检测用户是否想看媒体
+    const mediaIntent = lastUserMessage ? detectMediaIntent(lastUserMessage.content || '') : null;
+
     // 构建系统提示
     let systemPrompt = characterPrompt;
 
@@ -36,6 +65,13 @@ export async function POST(request: NextRequest) {
 当前时间：${now.getFullYear()}年${now.getMonth() + 1}月${now.getDate()}日 ${now.getHours()}:${now.getMinutes().toString().padStart(2, '0')}
     `;
     systemPrompt += timeInfo;
+
+    // 如果用户想看媒体，添加提示
+    if (mediaIntent) {
+      systemPrompt += `
+
+【重要】用户想看你的${mediaIntent === 'selfie' ? '照片/自拍' : mediaIntent === 'dance' ? '跳舞视频' : '运动/健身视频'}。请用简短的话回应，表示你会发给她看。比如"好，等我一下"或"给你拍一个"。`;
+    }
 
     // 如果检测到心理健康问题，添加引导提示
     if (hasMentalHealthKeywords) {
@@ -80,6 +116,20 @@ export async function POST(request: NextRequest) {
       temperature: 0.8,
     });
 
+    // 判断是否应该主动发送媒体（每10-20轮对话）
+    let autoMedia: 'selfie' | 'dance' | 'workout' | null = null;
+    if (!mediaIntent && messageCount > 0 && messageCount % 15 === 0) {
+      // 每15轮对话主动发一次
+      const rand = Math.random();
+      if (rand < 0.4) {
+        autoMedia = 'selfie';
+      } else if (rand < 0.7) {
+        autoMedia = 'dance';
+      } else {
+        autoMedia = 'workout';
+      }
+    }
+
     // 返回流式响应
     const encoder = new TextEncoder();
     const readableStream = new ReadableStream({
@@ -90,6 +140,13 @@ export async function POST(request: NextRequest) {
               controller.enqueue(encoder.encode(chunk.content.toString()));
             }
           }
+          
+          // 在流末尾添加媒体标记（如果需要）
+          const finalMedia = mediaIntent || autoMedia;
+          if (finalMedia) {
+            controller.enqueue(encoder.encode(`[MEDIA:${finalMedia}]`));
+          }
+          
           controller.close();
         } catch (error) {
           controller.error(error);

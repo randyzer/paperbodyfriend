@@ -26,6 +26,7 @@ export default function ChatPage() {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [audioMap, setAudioMap] = useState<Record<string, string>>({});
   const [initialized, setInitialized] = useState(false);
+  const [messageCount, setMessageCount] = useState(0); // 追踪对话轮数
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -45,9 +46,11 @@ export default function ChatPage() {
     const history = getChatHistory();
     if (history.length > 0) {
       setMessages(history);
+      // 计算已有对话轮数（用户消息数）
+      const userMsgCount = history.filter(m => m.role === 'user').length;
+      setMessageCount(userMsgCount);
       setInitialized(true);
     } else {
-      // 标记需要发送初始问候
       setInitialized(false);
     }
   }, []);
@@ -130,21 +133,27 @@ ${weather.advice}
         const chunk = decoder.decode(value, { stream: true });
         fullContent += chunk;
         
+        // 解析媒体标记
+        const { text, mediaType } = parseMediaMarker(fullContent);
+        
         setMessages(prev => {
           const newMessages = [...prev];
           const lastMsg = newMessages[newMessages.length - 1];
           if (lastMsg.role === 'assistant') {
-            lastMsg.content = fullContent;
+            lastMsg.content = text;
           }
           return newMessages;
         });
       }
 
-      if (fullContent) {
-        generateTTS(initialMessage.id, fullContent);
+      // 最终解析
+      const { text: finalText, mediaType } = parseMediaMarker(fullContent);
+      
+      if (finalText) {
+        generateTTS(initialMessage.id, finalText);
         saveChatHistory([{
           ...initialMessage,
-          content: fullContent
+          content: finalText
         }]);
       }
     } catch (error) {
@@ -166,6 +175,18 @@ ${weather.advice}
     } finally {
       setIsLoading(false);
     }
+  };
+
+  // 解析媒体标记
+  const parseMediaMarker = (content: string): { text: string; mediaType: 'selfie' | 'dance' | 'workout' | null } => {
+    const mediaMatch = content.match(/\[MEDIA:(selfie|dance|workout)\]$/);
+    if (mediaMatch) {
+      return {
+        text: content.replace(/\[MEDIA:(selfie|dance|workout)\]$/, '').trim(),
+        mediaType: mediaMatch[1] as 'selfie' | 'dance' | 'workout'
+      };
+    }
+    return { text: content, mediaType: null };
   };
 
   // 生成语音
@@ -209,25 +230,38 @@ ${weather.advice}
   };
 
   // 生成AI自拍照片
-  const generateSelfie = async () => {
+  const generateSelfie = async (caption?: string) => {
     if (!character) return;
 
+    type CharId = 'uncle' | 'sunshine' | 'straight_man';
+    const charId = character.id as CharId;
+    
     try {
-      const prompt = `一个${character.name}的帅气自拍照片，${character.id === 'uncle' ? '成熟稳重，深邃的眼神' : character.id === 'sunshine' ? '阳光灿烂的笑容' : '略带腼腆的表情'}，高清写真风格`;
+      const prompts: Record<CharId, string> = {
+        uncle: '一个成熟稳重的中年男性自拍照片，深邃的眼神，穿着休闲衬衫，高清写真风格，阳光背景',
+        sunshine: '一个阳光帅气的年轻男性自拍照片，灿烂的笑容，穿着时尚，高清写真风格',
+        straight_man: '一个斯文的年轻男性自拍照片，略带腼腆的表情，穿着简约，高清写真风格'
+      };
       
       const response = await fetch('/api/image', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
+        body: JSON.stringify({ prompt: prompts[charId] }),
       });
 
       const data = await response.json();
       
       if (data.imageUrls && data.imageUrls[0]) {
+        const captionsByChar: Record<CharId, string[]> = {
+          uncle: ['给你看看今天的我', '刚拍的', '嘿嘿'],
+          sunshine: ['看看我今天帅不帅~', '给你发张自拍！', '嘿嘿，今天状态不错'],
+          straight_man: ['拍了张照片', '额...给你看看', '这个角度还行吗']
+        };
+        
         const imageMessage: ChatMessage = {
           id: `msg_${Date.now()}_image`,
           role: 'assistant',
-          content: character.id === 'uncle' ? '刚拍的照片，给你看看' : character.id === 'sunshine' ? '嘿嘿，今天状态不错！' : '拍了张照片...你觉得怎么样？',
+          content: caption || captionsByChar[charId][Math.floor(Math.random() * 3)],
           timestamp: Date.now(),
           type: 'image',
           mediaUrl: data.imageUrls[0],
@@ -247,25 +281,38 @@ ${weather.advice}
   };
 
   // 生成AI跳舞视频
-  const generateDance = async () => {
+  const generateDance = async (caption?: string) => {
     if (!character) return;
 
+    type CharId = 'uncle' | 'sunshine' | 'straight_man';
+    const charId = character.id as CharId;
+    
     try {
-      const prompt = `一个${character.name}正在跳舞，动作流畅自然，表情生动`;
+      const prompts: Record<CharId, string> = {
+        uncle: '一个成熟稳重的中年男性正在跳舞，动作优雅从容，表情自信',
+        sunshine: '一个阳光帅气的年轻男性正在跳舞，动作充满活力，笑容灿烂',
+        straight_man: '一个斯文的年轻男性正在跳舞，动作有点笨拙但很认真'
+      };
       
       const response = await fetch('/api/video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, duration: 5 }),
+        body: JSON.stringify({ prompt: prompts[charId], duration: 5 }),
       });
 
       const data = await response.json();
       
       if (data.videoUrl) {
+        const captionsByChar: Record<CharId, string[]> = {
+          uncle: ['给你跳个舞', '献丑了', '希望你喜欢'],
+          sunshine: ['看我给你跳个舞！', '嘿嘿，来一段！', '看我的！'],
+          straight_man: ['不太会跳...但还是给你看', '跳得不好别笑话我', '试试看...']
+        };
+        
         const videoMessage: ChatMessage = {
           id: `msg_${Date.now()}_video`,
           role: 'assistant',
-          content: character.id === 'uncle' ? '给你跳个舞' : character.id === 'sunshine' ? '看我给你跳个舞！' : '虽然不太会...但还是想给你看',
+          content: caption || captionsByChar[charId][Math.floor(Math.random() * 3)],
           timestamp: Date.now(),
           type: 'video',
           mediaUrl: data.videoUrl,
@@ -284,6 +331,57 @@ ${weather.advice}
     }
   };
 
+  // 生成AI运动视频
+  const generateWorkout = async (caption?: string) => {
+    if (!character) return;
+
+    type CharId = 'uncle' | 'sunshine' | 'straight_man';
+    const charId = character.id as CharId;
+    
+    try {
+      const prompts: Record<CharId, string> = {
+        uncle: '一个成熟稳重的中年男性正在健身房运动，举哑铃，表情专注',
+        sunshine: '一个阳光帅气的年轻男性正在健身房运动，充满活力，汗水和笑容',
+        straight_man: '一个斯文的年轻男性正在健身房运动，动作认真，有点吃力'
+      };
+      
+      const response = await fetch('/api/video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt: prompts[charId], duration: 5 }),
+      });
+
+      const data = await response.json();
+      
+      if (data.videoUrl) {
+        const captionsByChar: Record<CharId, string[]> = {
+          uncle: ['刚健完身，给你看看', '今天的运动打卡', '运动完精神好多了'],
+          sunshine: ['看我健身！', '今天练得很爽！', '流汗的感觉真棒~'],
+          straight_man: ['刚在健身房...', '运动视频...有点尴尬', '练了一会儿']
+        };
+        
+        const videoMessage: ChatMessage = {
+          id: `msg_${Date.now()}_workout`,
+          role: 'assistant',
+          content: caption || captionsByChar[charId][Math.floor(Math.random() * 3)],
+          timestamp: Date.now(),
+          type: 'video',
+          mediaUrl: data.videoUrl,
+        };
+        
+        setMessages(prev => {
+          const newMessages = [...prev, videoMessage];
+          saveChatHistory(newMessages);
+          return newMessages;
+        });
+        
+        generateTTS(videoMessage.id, videoMessage.content);
+      }
+    } catch (error) {
+      console.error('Workout video generation error:', error);
+    }
+  };
+
   // 发送消息
   const handleSendMessage = async () => {
     if (!inputText.trim() || isLoading || !character) return;
@@ -298,13 +396,16 @@ ${weather.advice}
 
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
-    saveChatHistory(newMessages);
     
     setInputText('');
     setIsLoading(true);
 
+    // 更新对话轮数
+    const newCount = messageCount + 1;
+    setMessageCount(newCount);
+
     try {
-      // 构建消息历史（只取最近10条，避免太长）
+      // 构建消息历史（只取最近10条）
       const recentMessages = newMessages.slice(-10);
       const chatMessages = recentMessages.map(msg => ({
         role: msg.role,
@@ -317,6 +418,7 @@ ${weather.advice}
         body: JSON.stringify({
           messages: chatMessages,
           characterPrompt: character.prompt,
+          messageCount: newCount,
         }),
       });
 
@@ -337,6 +439,7 @@ ${weather.advice}
 
       const decoder = new TextDecoder();
       let fullContent = '';
+      let mediaType: 'selfie' | 'dance' | 'workout' | null = null;
       
       while (true) {
         const { done, value } = await reader.read();
@@ -345,34 +448,46 @@ ${weather.advice}
         const chunk = decoder.decode(value, { stream: true });
         fullContent += chunk;
         
+        // 实时解析
+        const parsed = parseMediaMarker(fullContent);
+        
         setMessages(prev => {
           const newMsgs = [...prev];
           const lastMsg = newMsgs[newMsgs.length - 1];
           if (lastMsg.role === 'assistant') {
-            lastMsg.content = fullContent;
+            lastMsg.content = parsed.text;
           }
           return newMsgs;
         });
+        
+        if (parsed.mediaType) {
+          mediaType = parsed.mediaType;
+        }
       }
 
-      if (fullContent) {
-        generateTTS(assistantMessage.id, fullContent);
+      // 最终解析
+      const { text: finalText, mediaType: finalMediaType } = parseMediaMarker(fullContent);
+      const actualMediaType = finalMediaType || mediaType;
+      
+      if (finalText) {
+        generateTTS(assistantMessage.id, finalText);
         
         setMessages(prev => {
           saveChatHistory(prev);
           return prev;
         });
 
-        // AI主动发自拍或跳舞（约15%概率）
-        const shouldSendMedia = Math.random() < 0.15;
-        if (shouldSendMedia) {
+        // 根据媒体类型生成内容
+        if (actualMediaType) {
           setTimeout(() => {
-            if (Math.random() < 0.8) {
+            if (actualMediaType === 'selfie') {
               generateSelfie();
-            } else {
+            } else if (actualMediaType === 'dance') {
               generateDance();
+            } else if (actualMediaType === 'workout') {
+              generateWorkout();
             }
-          }, 2000);
+          }, 1500);
         }
       }
     } catch (error) {
