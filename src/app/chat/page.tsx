@@ -73,28 +73,134 @@ export default function ChatPage() {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
 
-  // 发送初始问候
+  // 获取天气信息（模拟）
+  const getWeatherInfo = () => {
+    const weathers = [
+      { type: '晴天', temp: '25°C', advice: '今天阳光很好，记得涂防晒霜哦' },
+      { type: '多云', temp: '22°C', advice: '今天天气凉爽，很适合出去走走' },
+      { type: '阴天', temp: '20°C', advice: '今天天气有点阴沉，要注意保暖' },
+      { type: '小雨', temp: '18°C', advice: '今天有小雨，出门记得带伞' },
+      { type: '大雨', temp: '16°C', advice: '今天雨很大，尽量少出门，注意安全' },
+    ];
+    // 根据城市和时间模拟不同的天气
+    const index = (userInfo?.city?.length || 0) % weathers.length;
+    return weathers[index];
+  };
+
+  // 发送初始问候 - 调用LLM生成个性化问候
   const sendInitialGreeting = async () => {
-    if (!character || !userInfo) return;
+    if (!character) return;
 
-    const now = Date.now();
-    const hour = new Date().getHours();
+    setIsLoading(true);
     
-    let greeting = '';
-    if (hour < 12) greeting = '早上好';
-    else if (hour < 18) greeting = '下午好';
-    else greeting = '晚上好';
+    try {
+      const weather = getWeatherInfo();
+      const now = new Date();
+      const hour = now.getHours();
+      
+      // 构建系统提示，包含天气和用户信息
+      let systemPrompt = character.prompt;
+      
+      // 添加用户背景信息
+      if (userInfo) {
+        const userContext = `
+用户基本信息：
+- 年龄：${userInfo.age || '未知'}
+- 城市：${userInfo.city || '未知'}
+- 工作：${userInfo.job || '未知'}
+- 性格：${userInfo.personality || '未知'}
+- 吃饭口味：${userInfo.foodPreference || '未知'}
+- 运动类型：${userInfo.sports || '未知'}
+- 兴趣爱好：${userInfo.hobbies || '未知'}
+- 睡眠时间：${userInfo.sleepTime || '未知'}
 
-    const initialMessage: ChatMessage = {
-      id: `msg_${now}`,
-      role: 'assistant',
-      content: `${greeting}！看到你来了，我很高兴。今天过得怎么样？有什么想聊的吗？我会一直在这里陪着你。`,
-      timestamp: now,
-      type: 'text',
-    };
+这是你们第一次对话，请根据以上信息，给她一个温暖的问候。记得：
+1. 称呼她的名字或昵称（如果有）
+2. 提到她所在城市的天气情况：${weather.type}，${weather.temp}
+3. 根据天气给出贴心的提醒：${weather.advice}
+4. 根据她的兴趣爱好或工作，提出一个相关的话题
+5. 展现出你作为${character.name}的性格特点
+6. 用轻松自然的语气，不要太正式
 
-    setMessages([initialMessage]);
-    saveChatHistory([initialMessage]);
+请生成一段温暖、个性化的开场白，让她感受到你的关心和理解。`;
+        systemPrompt += userContext;
+      } else {
+        // 如果没有用户信息
+        systemPrompt += `
+这是你们第一次对话，请给她一个温暖的问候。记得：
+1. 用${hour < 12 ? '早上' : hour < 18 ? '下午' : '晚上'}好的方式问候
+2. 天气是${weather.type}，${weather.temp}
+3. 根据天气给出贴心的提醒：${weather.advice}
+4. 用轻松自然的语气开启话题
+
+请生成一段温暖的开场白。`;
+      }
+
+      // 调用API生成个性化问候
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          messages: [{ role: 'user', content: '你好，我是第一次来' }],
+          characterPrompt: systemPrompt,
+          userInfo,
+        }),
+      });
+
+      if (!response.ok) throw new Error('请求失败');
+
+      const reader = response.body?.getReader();
+      if (!reader) throw new Error('无法读取响应');
+
+      const initialMessage: ChatMessage = {
+        id: `msg_${Date.now()}_welcome`,
+        role: 'assistant',
+        content: '',
+        timestamp: Date.now(),
+        type: 'text',
+      };
+
+      setMessages([initialMessage]);
+
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        
+        const chunk = decoder.decode(value, { stream: true });
+        
+        setMessages(prev => {
+          const newMessages = [...prev];
+          const lastMsg = newMessages[newMessages.length - 1];
+          if (lastMsg.role === 'assistant') {
+            lastMsg.content += chunk;
+          }
+          saveChatHistory(newMessages);
+          return newMessages;
+        });
+      }
+    } catch (error) {
+      console.error('Initial greeting error:', error);
+      // 如果API调用失败，使用备用问候
+      const hour = new Date().getHours();
+      let greeting = '';
+      if (hour < 12) greeting = '早上好';
+      else if (hour < 18) greeting = '下午好';
+      else greeting = '晚上好';
+
+      const fallbackMessage: ChatMessage = {
+        id: `msg_${Date.now()}_fallback`,
+        role: 'assistant',
+        content: `${greeting}！终于等到你了~ 今天过得怎么样？我很想你呢。有什么想聊的，或者遇到什么开心的事、烦心的事，都可以告诉我，我会一直在这里陪着你。`,
+        timestamp: Date.now(),
+        type: 'text',
+      };
+
+      setMessages([fallbackMessage]);
+      saveChatHistory([fallbackMessage]);
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   // 发送消息
