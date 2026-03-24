@@ -17,7 +17,6 @@ export default function HomePage() {
   useEffect(() => {
     const character = getSelectedCharacter();
     if (character) {
-      // 如果已有角色选择，直接跳转到聊天页面
       router.push('/chat');
     }
   }, [router]);
@@ -30,11 +29,7 @@ export default function HomePage() {
     if (!selectedId) return;
     
     setIsLoading(true);
-    
-    // 保存选择的角色
     localStorage.setItem(STORAGE_KEYS.SELECTED_CHARACTER, selectedId);
-    
-    // 直接跳转到聊天页面
     router.push('/chat');
   };
 
@@ -44,7 +39,7 @@ export default function HomePage() {
         {/* 标题 */}
         <div className="text-center mb-12">
           <h1 className="text-4xl font-bold text-gray-800 mb-4">
-            🤖 AI 虚拟男友
+            AI 虚拟男友
           </h1>
           <p className="text-gray-600 text-lg">
             找一个懂你、疼你、呵护你的另一半
@@ -74,16 +69,21 @@ export default function HomePage() {
               onClick={() => handleSelect(character.id)}
             >
               <CardContent className="p-6">
-                {/* 角色头像占位 */}
-                <div className="w-24 h-24 mx-auto mb-4 rounded-full bg-gradient-to-br from-pink-300 to-purple-400 flex items-center justify-center text-4xl">
-                  {character.id === 'uncle' && '👨'}
-                  {character.id === 'sunshine' && '👦'}
-                  {character.id === 'straight_man' && '🤓'}
+                {/* 角色头像 */}
+                <div className="w-24 h-24 mx-auto mb-4 rounded-full overflow-hidden ring-4 ring-pink-100">
+                  <img 
+                    src={character.avatar} 
+                    alt={character.name}
+                    className="w-full h-full object-cover"
+                  />
                 </div>
                 
-                <h3 className="text-xl font-bold text-center text-gray-800 mb-2">
+                <h3 className="text-xl font-bold text-center text-gray-800 mb-1">
                   {character.name}
                 </h3>
+                <p className="text-pink-500 text-sm text-center mb-2">
+                  {character.title}
+                </p>
                 <p className="text-gray-600 text-sm text-center mb-4">
                   {character.description}
                 </p>

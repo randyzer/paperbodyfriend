@@ -526,11 +526,11 @@ ${weather.advice}
       <div className="bg-white shadow-sm px-4 py-3 flex items-center justify-between z-10">
         <div className="flex items-center gap-3">
           <Avatar className="w-10 h-10">
-            <AvatarFallback className="bg-gradient-to-br from-pink-300 to-purple-400 text-xl">
-              {character.id === 'uncle' && '👨'}
-              {character.id === 'sunshine' && '👦'}
-              {character.id === 'straight_man' && '🤓'}
-            </AvatarFallback>
+            <img 
+              src={character.avatar} 
+              alt={character.name}
+              className="w-full h-full object-cover rounded-full"
+            />
           </Avatar>
           <div>
             <h1 className="font-semibold text-gray-800">{character.name}</h1>
