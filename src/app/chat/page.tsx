@@ -25,30 +25,40 @@ export default function ChatPage() {
   const [character, setCharacter] = useState<typeof CHARACTERS.uncle | null>(null);
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [audioMap, setAudioMap] = useState<Record<string, string>>({});
+  const [initialized, setInitialized] = useState(false);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
-  const inputRef = useRef<HTMLInputElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
 
-  // 初始化
+  // 初始化 - 获取角色和历史
   useEffect(() => {
     const characterId = getSelectedCharacter();
-    const history = getChatHistory();
-
+    
     if (!characterId) {
       router.push('/');
       return;
     }
 
-    setCharacter(CHARACTERS[characterId as keyof typeof CHARACTERS]);
+    const char = CHARACTERS[characterId as keyof typeof CHARACTERS];
+    setCharacter(char);
     
+    const history = getChatHistory();
     if (history.length > 0) {
       setMessages(history);
+      setInitialized(true);
     } else {
-      // 发送初始问候
-      sendInitialGreeting();
+      // 标记需要发送初始问候
+      setInitialized(false);
     }
   }, []);
+
+  // 发送初始问候 - 当character设置好且没有历史记录时
+  useEffect(() => {
+    if (character && !initialized && messages.length === 0) {
+      sendInitialGreeting();
+      setInitialized(true);
+    }
+  }, [character, initialized]);
 
   // 自动滚动到底部
   useEffect(() => {
@@ -58,7 +68,7 @@ export default function ChatPage() {
   // 获取天气信息（模拟）
   const getWeatherInfo = () => {
     const weathers = [
-      { type: '晴天', temp: '25°C', advice: '今天阳光很好，记得涂防晒霜哦' },
+      { type: '晴天', temp: '25°C', advice: '今天阳光很好，记得涂防晒霜' },
       { type: '多云', temp: '22°C', advice: '今天天气凉爽，很适合出去走走' },
       { type: '阴天', temp: '20°C', advice: '今天天气有点阴沉，要注意保暖' },
       { type: '小雨', temp: '18°C', advice: '今天有小雨，出门记得带伞' },
@@ -80,18 +90,17 @@ export default function ChatPage() {
       let systemPrompt = character.prompt;
       
       systemPrompt += `
-这是你们第一次对话，请根据以下信息，给她一个温暖的问候：
-1. 当前时间：${hour < 12 ? '早上' : hour < 18 ? '下午' : '晚上'}，${hour}点
-2. 天气情况：${weather.type}，${weather.temp}
-3. 天气提醒：${weather.advice}
-4. 用轻松自然的语气开启话题，展现你作为${character.name}的性格特点
-5. 不要太长，2-3句话即可`;
+
+当前时间：${hour < 12 ? '早上' : hour < 18 ? '下午' : '晚上'}，天气：${weather.type}，${weather.temp}
+${weather.advice}
+
+这是你们第一次对话，请给她一个简短温暖的问候（1-2句话），自然地开启话题。不要太正式，像朋友一样打招呼。`;
 
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: '你好' }],
+          messages: [{ role: 'user', content: '打招呼' }],
           characterPrompt: systemPrompt,
         }),
       });
@@ -131,7 +140,6 @@ export default function ChatPage() {
         });
       }
 
-      // 生成语音
       if (fullContent) {
         generateTTS(initialMessage.id, fullContent);
         saveChatHistory([{
@@ -147,7 +155,7 @@ export default function ChatPage() {
       const fallbackMessage: ChatMessage = {
         id: `msg_${Date.now()}_fallback`,
         role: 'assistant',
-        content: `${greeting}！终于等到你了~ 今天过得怎么样？`,
+        content: `${greeting}，终于等到你了~`,
         timestamp: Date.now(),
         type: 'text',
       };
@@ -219,7 +227,7 @@ export default function ChatPage() {
         const imageMessage: ChatMessage = {
           id: `msg_${Date.now()}_image`,
           role: 'assistant',
-          content: character.id === 'uncle' ? '刚拍的照片，给你看看~' : character.id === 'sunshine' ? '嘿嘿，今天状态不错！' : '拍了张照片...你觉得怎么样？',
+          content: character.id === 'uncle' ? '刚拍的照片，给你看看' : character.id === 'sunshine' ? '嘿嘿，今天状态不错！' : '拍了张照片...你觉得怎么样？',
           timestamp: Date.now(),
           type: 'image',
           mediaUrl: data.imageUrls[0],
@@ -243,7 +251,7 @@ export default function ChatPage() {
     if (!character) return;
 
     try {
-      const prompt = `一个${character.name}正在跳舞，动作流畅自然，表情生动，背景简洁温馨`;
+      const prompt = `一个${character.name}正在跳舞，动作流畅自然，表情生动`;
       
       const response = await fetch('/api/video', {
         method: 'POST',
@@ -257,7 +265,7 @@ export default function ChatPage() {
         const videoMessage: ChatMessage = {
           id: `msg_${Date.now()}_video`,
           role: 'assistant',
-          content: character.id === 'uncle' ? '给你跳个舞，希望能让你开心' : character.id === 'sunshine' ? '看我给你跳个舞！🎵' : '虽然不太会跳舞...但还是想给你看看',
+          content: character.id === 'uncle' ? '给你跳个舞' : character.id === 'sunshine' ? '看我给你跳个舞！' : '虽然不太会...但还是想给你看',
           timestamp: Date.now(),
           type: 'video',
           mediaUrl: data.videoUrl,
@@ -296,8 +304,9 @@ export default function ChatPage() {
     setIsLoading(true);
 
     try {
-      // 构建消息历史
-      const chatMessages = newMessages.map(msg => ({
+      // 构建消息历史（只取最近10条，避免太长）
+      const recentMessages = newMessages.slice(-10);
+      const chatMessages = recentMessages.map(msg => ({
         role: msg.role,
         content: msg.content,
       }));
@@ -346,7 +355,6 @@ export default function ChatPage() {
         });
       }
 
-      // 生成语音
       if (fullContent) {
         generateTTS(assistantMessage.id, fullContent);
         
@@ -359,7 +367,6 @@ export default function ChatPage() {
         const shouldSendMedia = Math.random() < 0.15;
         if (shouldSendMedia) {
           setTimeout(() => {
-            // 80%概率发照片，20%概率发视频
             if (Math.random() < 0.8) {
               generateSelfie();
             } else {
@@ -373,7 +380,7 @@ export default function ChatPage() {
       setMessages(prev => [...prev, {
         id: `msg_${Date.now()}_error`,
         role: 'assistant',
-        content: '抱歉，我遇到一点问题，能再说一次吗？',
+        content: '抱歉，能再说一次吗？',
         timestamp: Date.now(),
         type: 'text',
       }]);
@@ -519,7 +526,6 @@ export default function ChatPage() {
       <div className="bg-white border-t px-4 py-3">
         <div className="max-w-2xl mx-auto flex items-center gap-2">
           <Input
-            ref={inputRef}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
