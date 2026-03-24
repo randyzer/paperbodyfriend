@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { CHARACTERS, STORAGE_KEYS } from '@/lib/config';
-import { getSelectedCharacter, getUserInfo, getChatHistory } from '@/lib/storage';
+import { getSelectedCharacter } from '@/lib/storage';
 import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -16,15 +16,9 @@ export default function HomePage() {
   // 检查是否已有选择
   useEffect(() => {
     const character = getSelectedCharacter();
-    const userInfo = getUserInfo();
-    const chatHistory = getChatHistory();
-
-    if (character && userInfo) {
-      // 如果已有完整信息，直接跳转到对话页面
+    if (character) {
+      // 如果已有角色选择，直接跳转到聊天页面
       router.push('/chat');
-    } else if (character) {
-      // 如果已有角色选择，跳转到信息填写页面
-      router.push('/onboarding');
     }
   }, [router]);
 
@@ -40,8 +34,8 @@ export default function HomePage() {
     // 保存选择的角色
     localStorage.setItem(STORAGE_KEYS.SELECTED_CHARACTER, selectedId);
     
-    // 跳转到信息填写页面
-    router.push('/onboarding');
+    // 直接跳转到聊天页面
+    router.push('/chat');
   };
 
   return (

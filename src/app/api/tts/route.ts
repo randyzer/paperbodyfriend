@@ -3,9 +3,16 @@ import { TTSClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
 
 export const runtime = 'nodejs';
 
+// 角色对应的语音
+const CHARACTER_VOICES: Record<string, string> = {
+  uncle: 'zh_male_dayi_saturn_bigtts',      // 大叔 - Dayi (成熟男性)
+  sunshine: 'zh_male_m191_uranus_bigtts',   // 阳光男孩 - 云舟
+  straight_man: 'zh_male_taocheng_uranus_bigtts', // 直男 - 小天
+};
+
 export async function POST(request: NextRequest) {
   try {
-    const { text, speaker = 'zh_female_xiaohe_uranus_bigtts' } = await request.json();
+    const { text, characterId } = await request.json();
     
     if (!text) {
       return NextResponse.json(
@@ -13,6 +20,9 @@ export async function POST(request: NextRequest) {
         { status: 400 }
       );
     }
+
+    // 根据角色选择语音
+    const speaker = characterId ? CHARACTER_VOICES[characterId] || 'zh_male_m191_uranus_bigtts' : 'zh_male_m191_uranus_bigtts';
 
     // 提取headers
     const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);

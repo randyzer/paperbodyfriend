@@ -1,34 +1,19 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback } from 'react';
+import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { Card, CardContent } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
-import { 
-  Mic, 
-  MicOff, 
-  PhoneOff, 
-  Image as ImageIcon, 
-  Video, 
-  Share2, 
-  Download,
-  Send,
-  MoreVertical,
-  RefreshCw,
-  Plus
-} from 'lucide-react';
+import { Send, Volume2, VolumeX, RefreshCw } from 'lucide-react';
 import { CHARACTERS } from '@/lib/config';
 import { 
   ChatMessage, 
   getSelectedCharacter, 
-  getUserInfo, 
   getChatHistory, 
   saveChatHistory,
-  exportChatHistory,
   clearAllData
 } from '@/lib/storage';
 
@@ -37,21 +22,17 @@ export default function ChatPage() {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
-  const [isVoiceMode, setIsVoiceMode] = useState(false);
-  const [isRecording, setIsRecording] = useState(false);
-  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [character, setCharacter] = useState<typeof CHARACTERS.uncle | null>(null);
-  const [userInfo, setUserInfo] = useState<any>(null);
+  const [playingId, setPlayingId] = useState<string | null>(null);
+  const [audioMap, setAudioMap] = useState<Record<string, string>>({});
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const audioChunksRef = useRef<Blob[]>([]);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
 
   // 初始化
   useEffect(() => {
     const characterId = getSelectedCharacter();
-    const info = getUserInfo();
     const history = getChatHistory();
 
     if (!characterId) {
@@ -60,7 +41,6 @@ export default function ChatPage() {
     }
 
     setCharacter(CHARACTERS[characterId as keyof typeof CHARACTERS]);
-    setUserInfo(info);
     
     if (history.length > 0) {
       setMessages(history);
@@ -82,14 +62,12 @@ export default function ChatPage() {
       { type: '多云', temp: '22°C', advice: '今天天气凉爽，很适合出去走走' },
       { type: '阴天', temp: '20°C', advice: '今天天气有点阴沉，要注意保暖' },
       { type: '小雨', temp: '18°C', advice: '今天有小雨，出门记得带伞' },
-      { type: '大雨', temp: '16°C', advice: '今天雨很大，尽量少出门，注意安全' },
     ];
-    // 根据城市和时间模拟不同的天气
-    const index = (userInfo?.city?.length || 0) % weathers.length;
+    const index = Math.floor(Math.random() * weathers.length);
     return weathers[index];
   };
 
-  // 发送初始问候 - 调用LLM生成个性化问候
+  // 发送初始问候
   const sendInitialGreeting = async () => {
     if (!character) return;
 
@@ -97,55 +75,24 @@ export default function ChatPage() {
     
     try {
       const weather = getWeatherInfo();
-      const now = new Date();
-      const hour = now.getHours();
+      const hour = new Date().getHours();
       
-      // 构建系统提示，包含天气和用户信息
       let systemPrompt = character.prompt;
       
-      // 添加用户背景信息
-      if (userInfo) {
-        const userContext = `
-用户基本信息：
-- 年龄：${userInfo.age || '未知'}
-- 城市：${userInfo.city || '未知'}
-- 工作：${userInfo.job || '未知'}
-- 性格：${userInfo.personality || '未知'}
-- 吃饭口味：${userInfo.foodPreference || '未知'}
-- 运动类型：${userInfo.sports || '未知'}
-- 兴趣爱好：${userInfo.hobbies || '未知'}
-- 睡眠时间：${userInfo.sleepTime || '未知'}
+      systemPrompt += `
+这是你们第一次对话，请根据以下信息，给她一个温暖的问候：
+1. 当前时间：${hour < 12 ? '早上' : hour < 18 ? '下午' : '晚上'}，${hour}点
+2. 天气情况：${weather.type}，${weather.temp}
+3. 天气提醒：${weather.advice}
+4. 用轻松自然的语气开启话题，展现你作为${character.name}的性格特点
+5. 不要太长，2-3句话即可`;
 
-这是你们第一次对话，请根据以上信息，给她一个温暖的问候。记得：
-1. 称呼她的名字或昵称（如果有）
-2. 提到她所在城市的天气情况：${weather.type}，${weather.temp}
-3. 根据天气给出贴心的提醒：${weather.advice}
-4. 根据她的兴趣爱好或工作，提出一个相关的话题
-5. 展现出你作为${character.name}的性格特点
-6. 用轻松自然的语气，不要太正式
-
-请生成一段温暖、个性化的开场白，让她感受到你的关心和理解。`;
-        systemPrompt += userContext;
-      } else {
-        // 如果没有用户信息
-        systemPrompt += `
-这是你们第一次对话，请给她一个温暖的问候。记得：
-1. 用${hour < 12 ? '早上' : hour < 18 ? '下午' : '晚上'}好的方式问候
-2. 天气是${weather.type}，${weather.temp}
-3. 根据天气给出贴心的提醒：${weather.advice}
-4. 用轻松自然的语气开启话题
-
-请生成一段温暖的开场白。`;
-      }
-
-      // 调用API生成个性化问候
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          messages: [{ role: 'user', content: '你好，我是第一次来' }],
+          messages: [{ role: 'user', content: '你好' }],
           characterPrompt: systemPrompt,
-          userInfo,
         }),
       });
 
@@ -165,43 +112,167 @@ export default function ChatPage() {
       setMessages([initialMessage]);
 
       const decoder = new TextDecoder();
+      let fullContent = '';
+      
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         
         const chunk = decoder.decode(value, { stream: true });
+        fullContent += chunk;
         
         setMessages(prev => {
           const newMessages = [...prev];
           const lastMsg = newMessages[newMessages.length - 1];
           if (lastMsg.role === 'assistant') {
-            lastMsg.content += chunk;
+            lastMsg.content = fullContent;
           }
-          saveChatHistory(newMessages);
           return newMessages;
         });
       }
+
+      // 生成语音
+      if (fullContent) {
+        generateTTS(initialMessage.id, fullContent);
+        saveChatHistory([{
+          ...initialMessage,
+          content: fullContent
+        }]);
+      }
     } catch (error) {
       console.error('Initial greeting error:', error);
-      // 如果API调用失败，使用备用问候
       const hour = new Date().getHours();
-      let greeting = '';
-      if (hour < 12) greeting = '早上好';
-      else if (hour < 18) greeting = '下午好';
-      else greeting = '晚上好';
-
+      let greeting = hour < 12 ? '早上好' : hour < 18 ? '下午好' : '晚上好';
+      
       const fallbackMessage: ChatMessage = {
         id: `msg_${Date.now()}_fallback`,
         role: 'assistant',
-        content: `${greeting}！终于等到你了~ 今天过得怎么样？我很想你呢。有什么想聊的，或者遇到什么开心的事、烦心的事，都可以告诉我，我会一直在这里陪着你。`,
+        content: `${greeting}！终于等到你了~ 今天过得怎么样？`,
         timestamp: Date.now(),
         type: 'text',
       };
 
       setMessages([fallbackMessage]);
       saveChatHistory([fallbackMessage]);
+      generateTTS(fallbackMessage.id, fallbackMessage.content);
     } finally {
       setIsLoading(false);
+    }
+  };
+
+  // 生成语音
+  const generateTTS = async (messageId: string, text: string) => {
+    if (!character) return;
+    
+    try {
+      const response = await fetch('/api/tts', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, characterId: character.id }),
+      });
+
+      const data = await response.json();
+      if (data.audioUri) {
+        setAudioMap(prev => ({ ...prev, [messageId]: data.audioUri }));
+      }
+    } catch (error) {
+      console.error('TTS error:', error);
+    }
+  };
+
+  // 播放语音
+  const playAudio = (messageId: string) => {
+    const audioUrl = audioMap[messageId];
+    if (!audioUrl) return;
+
+    if (audioRef.current) {
+      audioRef.current.pause();
+    }
+
+    if (playingId === messageId) {
+      setPlayingId(null);
+      return;
+    }
+
+    audioRef.current = new Audio(audioUrl);
+    audioRef.current.onended = () => setPlayingId(null);
+    audioRef.current.play();
+    setPlayingId(messageId);
+  };
+
+  // 生成AI自拍照片
+  const generateSelfie = async () => {
+    if (!character) return;
+
+    try {
+      const prompt = `一个${character.name}的帅气自拍照片，${character.id === 'uncle' ? '成熟稳重，深邃的眼神' : character.id === 'sunshine' ? '阳光灿烂的笑容' : '略带腼腆的表情'}，高清写真风格`;
+      
+      const response = await fetch('/api/image', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt }),
+      });
+
+      const data = await response.json();
+      
+      if (data.imageUrls && data.imageUrls[0]) {
+        const imageMessage: ChatMessage = {
+          id: `msg_${Date.now()}_image`,
+          role: 'assistant',
+          content: character.id === 'uncle' ? '刚拍的照片，给你看看~' : character.id === 'sunshine' ? '嘿嘿，今天状态不错！' : '拍了张照片...你觉得怎么样？',
+          timestamp: Date.now(),
+          type: 'image',
+          mediaUrl: data.imageUrls[0],
+        };
+        
+        setMessages(prev => {
+          const newMessages = [...prev, imageMessage];
+          saveChatHistory(newMessages);
+          return newMessages;
+        });
+        
+        generateTTS(imageMessage.id, imageMessage.content);
+      }
+    } catch (error) {
+      console.error('Image generation error:', error);
+    }
+  };
+
+  // 生成AI跳舞视频
+  const generateDance = async () => {
+    if (!character) return;
+
+    try {
+      const prompt = `一个${character.name}正在跳舞，动作流畅自然，表情生动，背景简洁温馨`;
+      
+      const response = await fetch('/api/video', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ prompt, duration: 5 }),
+      });
+
+      const data = await response.json();
+      
+      if (data.videoUrl) {
+        const videoMessage: ChatMessage = {
+          id: `msg_${Date.now()}_video`,
+          role: 'assistant',
+          content: character.id === 'uncle' ? '给你跳个舞，希望能让你开心' : character.id === 'sunshine' ? '看我给你跳个舞！🎵' : '虽然不太会跳舞...但还是想给你看看',
+          timestamp: Date.now(),
+          type: 'video',
+          mediaUrl: data.videoUrl,
+        };
+        
+        setMessages(prev => {
+          const newMessages = [...prev, videoMessage];
+          saveChatHistory(newMessages);
+          return newMessages;
+        });
+        
+        generateTTS(videoMessage.id, videoMessage.content);
+      }
+    } catch (error) {
+      console.error('Video generation error:', error);
     }
   };
 
@@ -217,30 +288,26 @@ export default function ChatPage() {
       type: 'text',
     };
 
-    setMessages(prev => {
-      const newMessages = [...prev, userMessage];
-      saveChatHistory(newMessages);
-      return newMessages;
-    });
+    const newMessages = [...messages, userMessage];
+    setMessages(newMessages);
+    saveChatHistory(newMessages);
     
     setInputText('');
     setIsLoading(true);
 
     try {
       // 构建消息历史
-      const chatMessages = messages.concat(userMessage).map(msg => ({
+      const chatMessages = newMessages.map(msg => ({
         role: msg.role,
         content: msg.content,
       }));
 
-      // 调用API
       const response = await fetch('/api/chat', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           messages: chatMessages,
           characterPrompt: character.prompt,
-          userInfo,
         }),
       });
 
@@ -260,28 +327,53 @@ export default function ChatPage() {
       setMessages(prev => [...prev, assistantMessage]);
 
       const decoder = new TextDecoder();
+      let fullContent = '';
+      
       while (true) {
         const { done, value } = await reader.read();
         if (done) break;
         
         const chunk = decoder.decode(value, { stream: true });
+        fullContent += chunk;
         
         setMessages(prev => {
-          const newMessages = [...prev];
-          const lastMsg = newMessages[newMessages.length - 1];
+          const newMsgs = [...prev];
+          const lastMsg = newMsgs[newMsgs.length - 1];
           if (lastMsg.role === 'assistant') {
-            lastMsg.content += chunk;
+            lastMsg.content = fullContent;
           }
-          saveChatHistory(newMessages);
-          return newMessages;
+          return newMsgs;
         });
+      }
+
+      // 生成语音
+      if (fullContent) {
+        generateTTS(assistantMessage.id, fullContent);
+        
+        setMessages(prev => {
+          saveChatHistory(prev);
+          return prev;
+        });
+
+        // AI主动发自拍或跳舞（约15%概率）
+        const shouldSendMedia = Math.random() < 0.15;
+        if (shouldSendMedia) {
+          setTimeout(() => {
+            // 80%概率发照片，20%概率发视频
+            if (Math.random() < 0.8) {
+              generateSelfie();
+            } else {
+              generateDance();
+            }
+          }, 2000);
+        }
       }
     } catch (error) {
       console.error('Chat error:', error);
       setMessages(prev => [...prev, {
         id: `msg_${Date.now()}_error`,
         role: 'assistant',
-        content: '抱歉，我遇到了一点问题，请稍后重试。',
+        content: '抱歉，我遇到一点问题，能再说一次吗？',
         timestamp: Date.now(),
         type: 'text',
       }]);
@@ -290,186 +382,11 @@ export default function ChatPage() {
     }
   };
 
-  // 生成AI男友自拍
-  const handleGenerateImage = async () => {
-    if (!character) return;
-    
-    setIsLoading(true);
-    
-    try {
-      const prompt = `一个${character.name}的帅气的自拍照片，${character.id === 'uncle' ? '成熟稳重，深邃的眼神' : character.id === 'sunshine' ? '阳光灿烂的笑容' : '略带腼腆的表情'}，高清写真风格，画面清晰美观`;
-      
-      const response = await fetch('/api/image', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt }),
-      });
-
-      const data = await response.json();
-      
-      if (data.imageUrls && data.imageUrls[0]) {
-        const imageMessage: ChatMessage = {
-          id: `msg_${Date.now()}_image`,
-          role: 'assistant',
-          content: '给你看看我的照片~',
-          timestamp: Date.now(),
-          type: 'image',
-          mediaUrl: data.imageUrls[0],
-        };
-        
-        setMessages(prev => {
-          const newMessages = [...prev, imageMessage];
-          saveChatHistory(newMessages);
-          return newMessages;
-        });
-      }
-    } catch (error) {
-      console.error('Image generation error:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 生成AI跳舞视频
-  const handleGenerateVideo = async () => {
-    if (!character) return;
-    
-    setIsLoading(true);
-    
-    try {
-      const prompt = `一个${character.name}正在跳舞，动作流畅，活力四射，背景简洁`;
-      
-      const response = await fetch('/api/video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ prompt, duration: 5 }),
-      });
-
-      const data = await response.json();
-      
-      if (data.videoUrl) {
-        const videoMessage: ChatMessage = {
-          id: `msg_${Date.now()}_video`,
-          role: 'assistant',
-          content: '给你跳个舞~',
-          timestamp: Date.now(),
-          type: 'video',
-          mediaUrl: data.videoUrl,
-        };
-        
-        setMessages(prev => {
-          const newMessages = [...prev, videoMessage];
-          saveChatHistory(newMessages);
-          return newMessages;
-        });
-      }
-    } catch (error) {
-      console.error('Video generation error:', error);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  // 语音录制
-  const startRecording = async () => {
-    try {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mediaRecorder = new MediaRecorder(stream);
-      mediaRecorderRef.current = mediaRecorder;
-      audioChunksRef.current = [];
-
-      mediaRecorder.ondataavailable = (event) => {
-        if (event.data.size > 0) {
-          audioChunksRef.current.push(event.data);
-        }
-      };
-
-      mediaRecorder.onstop = async () => {
-        const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-        const reader = new FileReader();
-        reader.onloadend = async () => {
-          const base64 = (reader.result as string).split(',')[1];
-          
-          try {
-            const response = await fetch('/api/asr', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ audioBase64: base64 }),
-            });
-
-            const data = await response.json();
-            if (data.text) {
-              setInputText(data.text);
-              inputRef.current?.focus();
-            }
-          } catch (error) {
-            console.error('ASR error:', error);
-          }
-        };
-        reader.readAsDataURL(audioBlob);
-        
-        // 关闭麦克风
-        stream.getTracks().forEach(track => track.stop());
-      };
-
-      mediaRecorder.start();
-      setIsRecording(true);
-    } catch (error) {
-      console.error('Recording error:', error);
-    }
-  };
-
-  const stopRecording = () => {
-    if (mediaRecorderRef.current && isRecording) {
-      mediaRecorderRef.current.stop();
-      setIsRecording(false);
-    }
-  };
-
-  // 导出聊天记录
-  const handleExport = () => {
-    if (messages.length > 0 && character) {
-      exportChatHistory(messages, character.name);
-    }
-  };
-
-  // 分享
-  const handleShare = async () => {
-    const shareData = {
-      title: 'AI虚拟男友',
-      text: '快来试试我的AI男友~',
-      url: window.location.origin,
-    };
-
-    if (navigator.share) {
-      try {
-        await navigator.share(shareData);
-      } catch (error) {
-        console.log('Share cancelled');
-      }
-    } else {
-      // 复制链接
-      navigator.clipboard.writeText(shareData.url);
-      alert('链接已复制到剪贴板');
-    }
-  };
-
-  // TTS播放
-  const playTTS = async (text: string) => {
-    try {
-      const response = await fetch('/api/tts', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ text }),
-      });
-
-      const data = await response.json();
-      if (data.audioUri) {
-        const audio = new Audio(data.audioUri);
-        audio.play();
-      }
-    } catch (error) {
-      console.error('TTS error:', error);
+  // 重置
+  const handleReset = () => {
+    if (confirm('确定要重新选择角色吗？聊天记录将被清空。')) {
+      clearAllData();
+      router.push('/');
     }
   };
 
@@ -487,7 +404,7 @@ export default function ChatPage() {
       <div className="bg-white shadow-sm px-4 py-3 flex items-center justify-between z-10">
         <div className="flex items-center gap-3">
           <Avatar className="w-10 h-10">
-            <AvatarFallback className="bg-gradient-to-br from-pink-300 to-purple-400">
+            <AvatarFallback className="bg-gradient-to-br from-pink-300 to-purple-400 text-xl">
               {character.id === 'uncle' && '👨'}
               {character.id === 'sunshine' && '👦'}
               {character.id === 'straight_man' && '🤓'}
@@ -495,32 +412,20 @@ export default function ChatPage() {
           </Avatar>
           <div>
             <h1 className="font-semibold text-gray-800">{character.name}</h1>
-            <Badge variant="outline" className="text-xs">
-              {isVoiceMode ? '语音通话中' : '在线'}
+            <Badge variant="outline" className="text-xs text-green-600 border-green-200">
+              在线
             </Badge>
           </div>
         </div>
         
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" onClick={handleExport}>
-            <Download className="w-5 h-5" />
-          </Button>
-          <Button variant="ghost" size="icon" onClick={handleShare}>
-            <Share2 className="w-5 h-5" />
-          </Button>
-          <Button 
-            variant="ghost" 
-            size="icon" 
-            onClick={() => {
-              if (confirm('确定要重置所有数据吗？')) {
-                clearAllData();
-                router.push('/');
-              }
-            }}
-          >
-            <RefreshCw className="w-5 h-5" />
-          </Button>
-        </div>
+        <Button 
+          variant="ghost" 
+          size="icon" 
+          onClick={handleReset}
+          title="重新选择角色"
+        >
+          <RefreshCw className="w-5 h-5" />
+        </Button>
       </div>
 
       {/* 消息区域 */}
@@ -532,11 +437,11 @@ export default function ChatPage() {
               className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
             >
               <div
-                className={`max-w-[70%] rounded-2xl px-4 py-2 ${
+                className={`max-w-[70%] ${
                   msg.role === 'user'
                     ? 'bg-pink-500 text-white'
                     : 'bg-white text-gray-800 shadow-sm'
-                }`}
+                } rounded-2xl px-4 py-2`}
               >
                 {/* 文字内容 */}
                 <p className="whitespace-pre-wrap">{msg.content}</p>
@@ -547,7 +452,8 @@ export default function ChatPage() {
                     <img
                       src={msg.mediaUrl}
                       alt="AI男友自拍"
-                      className="rounded-lg max-w-full"
+                      className="rounded-lg max-w-full cursor-pointer"
+                      onClick={() => window.open(msg.mediaUrl, '_blank')}
                     />
                   </div>
                 )}
@@ -563,14 +469,31 @@ export default function ChatPage() {
                   </div>
                 )}
                 
-                {/* 时间 */}
-                <div className={`text-xs mt-1 ${
+                {/* 底部：时间 + 语音按钮 */}
+                <div className={`flex items-center justify-between mt-1 ${
                   msg.role === 'user' ? 'text-pink-100' : 'text-gray-400'
                 }`}>
-                  {new Date(msg.timestamp).toLocaleTimeString('zh-CN', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
+                  <span className="text-xs">
+                    {new Date(msg.timestamp).toLocaleTimeString('zh-CN', {
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </span>
+                  
+                  {/* AI消息显示语音按钮 */}
+                  {msg.role === 'assistant' && (
+                    <button
+                      onClick={() => playAudio(msg.id)}
+                      className="ml-2 p-1 rounded-full hover:bg-gray-100 transition-colors"
+                      title={playingId === msg.id ? '停止播放' : '播放语音'}
+                    >
+                      {playingId === msg.id ? (
+                        <VolumeX className="w-4 h-4 text-pink-500" />
+                      ) : (
+                        <Volume2 className="w-4 h-4 text-gray-400 hover:text-pink-500" />
+                      )}
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -592,227 +515,28 @@ export default function ChatPage() {
         </div>
       </ScrollArea>
 
-      {/* 消息区域 */}
-      <ScrollArea className={`flex-1 p-4 ${showMoreMenu ? 'hidden' : ''}`}>
-        <div className="max-w-2xl mx-auto space-y-4">
-          {messages.map((msg) => (
-            <div
-              key={msg.id}
-              className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}
-            >
-              <div
-                className={`max-w-[70%] rounded-2xl px-4 py-2 ${
-                  msg.role === 'user'
-                    ? 'bg-pink-500 text-white'
-                    : 'bg-white text-gray-800 shadow-sm'
-                }`}
-              >
-                {/* 文字内容 */}
-                <p className="whitespace-pre-wrap">{msg.content}</p>
-                
-                {/* 图片 */}
-                {msg.type === 'image' && msg.mediaUrl && (
-                  <div className="mt-2">
-                    <img
-                      src={msg.mediaUrl}
-                      alt="AI男友自拍"
-                      className="rounded-lg max-w-full"
-                    />
-                  </div>
-                )}
-                
-                {/* 视频 */}
-                {msg.type === 'video' && msg.mediaUrl && (
-                  <div className="mt-2">
-                    <video
-                      src={msg.mediaUrl}
-                      controls
-                      className="rounded-lg max-w-full"
-                    />
-                  </div>
-                )}
-                
-                {/* 时间 */}
-                <div className={`text-xs mt-1 ${
-                  msg.role === 'user' ? 'text-pink-100' : 'text-gray-400'
-                }`}>
-                  {new Date(msg.timestamp).toLocaleTimeString('zh-CN', {
-                    hour: '2-digit',
-                    minute: '2-digit',
-                  })}
-                </div>
-              </div>
-            </div>
-          ))}
+      {/* 输入区域 */}
+      <div className="bg-white border-t px-4 py-3">
+        <div className="max-w-2xl mx-auto flex items-center gap-2">
+          <Input
+            ref={inputRef}
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+            placeholder="发送消息..."
+            disabled={isLoading}
+            className="flex-1"
+          />
           
-          {isLoading && (
-            <div className="flex justify-start">
-              <div className="bg-white rounded-2xl px-4 py-2 shadow-sm">
-                <div className="flex gap-1">
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></span>
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></span>
-                  <span className="w-2 h-2 bg-gray-400 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></span>
-                </div>
-              </div>
-            </div>
-          )}
-          
-          <div ref={messagesEndRef} />
+          <Button 
+            onClick={handleSendMessage}
+            disabled={!inputText.trim() || isLoading}
+            className="bg-pink-500 hover:bg-pink-600 shrink-0"
+          >
+            <Send className="w-5 h-5" />
+          </Button>
         </div>
-      </ScrollArea>
-
-      {/* 微信风格更多功能菜单 */}
-      {showMoreMenu && (
-        <div className="flex-1 bg-gray-100 p-4">
-          <div className="max-w-2xl mx-auto">
-            <div className="grid grid-cols-4 gap-4">
-              {/* 语音通话 */}
-              <button
-                onClick={() => {
-                  setIsVoiceMode(true);
-                  setShowMoreMenu(false);
-                }}
-                className="flex flex-col items-center gap-2 p-2"
-              >
-                <div className="w-14 h-14 rounded-xl bg-green-500 flex items-center justify-center">
-                  <Mic className="w-6 h-6 text-white" />
-                </div>
-                <span className="text-xs text-gray-600">语音通话</span>
-              </button>
-
-              {/* 自拍 */}
-              <button
-                onClick={() => {
-                  handleGenerateImage();
-                  setShowMoreMenu(false);
-                }}
-                className="flex flex-col items-center gap-2 p-2"
-              >
-                <div className="w-14 h-14 rounded-xl bg-pink-500 flex items-center justify-center">
-                  <ImageIcon className="w-6 h-6 text-white" />
-                </div>
-                <span className="text-xs text-gray-600">自拍</span>
-              </button>
-
-              {/* 跳舞 */}
-              <button
-                onClick={() => {
-                  handleGenerateVideo();
-                  setShowMoreMenu(false);
-                }}
-                className="flex flex-col items-center gap-2 p-2"
-              >
-                <div className="w-14 h-14 rounded-xl bg-purple-500 flex items-center justify-center">
-                  <Video className="w-6 h-6 text-white" />
-                </div>
-                <span className="text-xs text-gray-600">跳舞</span>
-              </button>
-
-              {/* 分享 */}
-              <button
-                onClick={() => {
-                  handleShare();
-                  setShowMoreMenu(false);
-                }}
-                className="flex flex-col items-center gap-2 p-2"
-              >
-                <div className="w-14 h-14 rounded-xl bg-blue-500 flex items-center justify-center">
-                  <Share2 className="w-6 h-6 text-white" />
-                </div>
-                <span className="text-xs text-gray-600">分享</span>
-              </button>
-            </div>
-
-            {/* 取消按钮 */}
-            <button
-              onClick={() => setShowMoreMenu(false)}
-              className="w-full mt-6 py-3 bg-white rounded-lg text-gray-600 text-center"
-            >
-              取消
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* 语音通话模式 */}
-      {isVoiceMode && (
-        <div className="flex-1 bg-gray-100 flex flex-col items-center justify-center p-4">
-          <Avatar className="w-24 h-24 mb-4">
-            <AvatarFallback className="bg-gradient-to-br from-pink-300 to-purple-400 text-4xl">
-              {character.id === 'uncle' && '👨'}
-              {character.id === 'sunshine' && '👦'}
-              {character.id === 'straight_man' && '🤓'}
-            </AvatarFallback>
-          </Avatar>
-          <h2 className="text-xl font-semibold text-gray-800 mb-2">{character.name}</h2>
-          <p className="text-gray-500 mb-8">{isRecording ? '正在录音...' : '点击麦克风开始说话'}</p>
-          
-          <div className="flex items-center gap-8">
-            <Button
-              onClick={() => setIsVoiceMode(false)}
-              variant="outline"
-              className="rounded-full w-16 h-16 border-gray-300"
-            >
-              <PhoneOff className="w-6 h-6 text-gray-600" />
-            </Button>
-            
-            <Button
-              onMouseDown={startRecording}
-              onMouseUp={stopRecording}
-              onMouseLeave={stopRecording}
-              className={`rounded-full w-20 h-20 ${isRecording ? 'bg-red-500 hover:bg-red-600' : 'bg-green-500 hover:bg-green-600'}`}
-            >
-              {isRecording ? <MicOff className="w-8 h-8" /> : <Mic className="w-8 h-8" />}
-            </Button>
-            
-            <Button
-              variant="outline"
-              className="rounded-full w-16 h-16 border-gray-300"
-              onClick={() => {
-                // 发送文字消息
-              }}
-            >
-              <Send className="w-6 h-6 text-gray-600" />
-            </Button>
-          </div>
-          
-          <p className="text-gray-400 text-sm mt-8">松开麦克风结束录音</p>
-        </div>
-      )}
-
-      {/* 输入区域 - 仅在非语音模式和菜单关闭时显示 */}
-      {!isVoiceMode && !showMoreMenu && (
-        <div className="bg-white border-t px-4 py-3 pb-safe">
-          <div className="max-w-2xl mx-auto flex items-center gap-2">
-            <Button
-              variant="ghost"
-              size="icon"
-              onClick={() => setShowMoreMenu(true)}
-              className="shrink-0"
-            >
-              <Plus className="w-6 h-6" />
-            </Button>
-            
-            <Input
-              ref={inputRef}
-              value={inputText}
-              onChange={(e) => setInputText(e.target.value)}
-              onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-              placeholder="发送消息..."
-              disabled={isLoading}
-              className="flex-1"
-            />
-            
-            <Button 
-              onClick={handleSendMessage}
-              disabled={!inputText.trim() || isLoading}
-              className="bg-pink-500 hover:bg-pink-600 shrink-0"
-            >
-              <Send className="w-5 h-5" />
-            </Button>
-          </div>
-        </div>
-      )}
+      </div>
     </div>
   );
 }
