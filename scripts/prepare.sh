@@ -5,5 +5,4 @@ WORKSPACE_PATH="${WORKSPACE_PATH:-$(pwd)}"
 
 cd "${WORKSPACE_PATH}"
 
-echo "Installing dependencies..."
-pnpm install --prefer-frozen-lockfile --prefer-offline --loglevel debug --reporter=append-only
+echo "Dependencies should be installed by the platform or by an explicit local install step."

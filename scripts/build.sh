@@ -5,9 +5,6 @@ WORKSPACE_PATH="${WORKSPACE_PATH:-$(pwd)}"
 
 cd "${WORKSPACE_PATH}"
 
-echo "Installing dependencies..."
-pnpm install --prefer-frozen-lockfile --prefer-offline --loglevel debug --reporter=append-only
-
 echo "Building the Next.js project..."
 NODE_ENV=production pnpm next build
 
