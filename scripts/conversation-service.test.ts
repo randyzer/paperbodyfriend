@@ -19,6 +19,7 @@ type StoredMessage = {
   content: string;
   type: 'text' | 'image' | 'video' | null;
   mediaUrl: string | null;
+  audioUrl: string | null;
   videoRequestId: string | null;
   videoStatus: 'pending' | 'completed' | 'failed' | null;
   pendingCaption: string | null;
@@ -93,6 +94,7 @@ async function main() {
             content: message.content,
             type: message.type,
             mediaUrl: message.mediaUrl,
+            audioUrl: message.audioUrl,
             videoRequestId: message.videoRequestId,
             videoStatus: message.videoStatus,
             pendingCaption: message.pendingCaption,
@@ -190,6 +192,7 @@ async function main() {
         timestamp: 1713607200000,
         type: 'image',
         mediaUrl: 'https://example.com/image.png',
+        audioUrl: 'https://example.com/audio.mp3',
       },
     ],
   });
@@ -212,12 +215,14 @@ async function main() {
   assert.equal(conversationDetail?.messages.length, 2);
   assert.equal(conversationDetail?.messages[0]?.content, '先到的消息');
   assert.equal(conversationDetail?.messages[0]?.mediaUrl, undefined);
+  assert.equal(conversationDetail?.messages[0]?.audioUrl, undefined);
   assert.equal(conversationDetail?.messages[0]?.videoRequestId, undefined);
   assert.equal(conversationDetail?.messages[0]?.videoStatus, undefined);
   assert.equal(conversationDetail?.messages[0]?.pendingCaption, undefined);
   assert.equal(conversationDetail?.messages[0]?.mediaKind, undefined);
   assert.equal(conversationDetail?.messages[1]?.content, '后来但更新的消息');
   assert.equal(detailWithMedia?.messages[0]?.mediaUrl, 'https://example.com/image.png');
+  assert.equal(detailWithMedia?.messages[0]?.audioUrl, 'https://example.com/audio.mp3');
   assert.equal(detailWithMedia?.messages[0]?.videoRequestId, undefined);
   assert.equal(detailWithMedia?.messages[0]?.videoStatus, undefined);
   assert.equal(detailWithMedia?.messages[0]?.pendingCaption, undefined);

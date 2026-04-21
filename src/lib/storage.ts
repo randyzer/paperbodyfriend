@@ -8,6 +8,7 @@ export interface ChatMessage {
   timestamp: number;
   type?: 'text' | 'image' | 'video';
   mediaUrl?: string;
+  audioUrl?: string;
   videoRequestId?: string;
   videoStatus?: 'pending' | 'completed' | 'failed';
   pendingCaption?: string;

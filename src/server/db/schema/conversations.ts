@@ -36,6 +36,7 @@ export const conversationMessages = pgTable(
     content: text('content').notNull(),
     type: text('type').$type<'text' | 'image' | 'video'>(),
     mediaUrl: text('media_url'),
+    audioUrl: text('audio_url'),
     videoRequestId: text('video_request_id'),
     videoStatus: text('video_status').$type<'pending' | 'completed' | 'failed'>(),
     pendingCaption: text('pending_caption'),

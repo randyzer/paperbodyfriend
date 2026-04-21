@@ -6,6 +6,7 @@ export type ConversationMessageInput = {
   timestamp: number;
   type?: 'text' | 'image' | 'video';
   mediaUrl?: string;
+  audioUrl?: string;
   videoRequestId?: string;
   videoStatus?: 'pending' | 'completed' | 'failed';
   pendingCaption?: string;
@@ -31,6 +32,7 @@ export type ConversationMessageRecord = {
   content: string;
   type: 'text' | 'image' | 'video' | null;
   mediaUrl: string | null;
+  audioUrl: string | null;
   videoRequestId: string | null;
   videoStatus: 'pending' | 'completed' | 'failed' | null;
   pendingCaption: string | null;
@@ -74,6 +76,7 @@ function areEquivalentMessages(
     left.content === right.content &&
     left.type === right.type &&
     left.mediaUrl === right.mediaUrl &&
+    left.audioUrl === right.audioUrl &&
     left.videoRequestId === right.videoRequestId &&
     left.videoStatus === right.videoStatus &&
     left.pendingCaption === right.pendingCaption &&
@@ -140,6 +143,7 @@ export function createConversationService(options: CreateConversationServiceOpti
           timestamp: message.createdAt.getTime(),
           type: message.type,
           mediaUrl: toOptionalValue(message.mediaUrl),
+          audioUrl: toOptionalValue(message.audioUrl),
           videoRequestId: toOptionalValue(message.videoRequestId),
           videoStatus: toOptionalValue(message.videoStatus),
           pendingCaption: toOptionalValue(message.pendingCaption),
@@ -188,6 +192,7 @@ export function createConversationService(options: CreateConversationServiceOpti
         content: message.content,
         type: message.type ?? 'text',
         mediaUrl: message.mediaUrl ?? null,
+        audioUrl: message.audioUrl ?? null,
         videoRequestId: message.videoRequestId ?? null,
         videoStatus: message.videoStatus ?? null,
         pendingCaption: message.pendingCaption ?? null,

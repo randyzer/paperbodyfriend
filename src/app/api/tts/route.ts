@@ -3,32 +3,29 @@ import { toRouteError } from '@/lib/ai/errors';
 import { synthesizeCharacterSpeech } from '@/lib/ai/services/speech-service';
 import { AuthError } from '@/server/auth/auth-service';
 import { requireAuthenticatedUser } from '@/server/auth/request-auth';
+import { createTtsRouteHandler } from '@/server/media/tts-route-handler';
+import { uploadAssetToR2 } from '@/server/media/r2-media';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
-  try {
-    await requireAuthenticatedUser(request);
-
-    const { text, characterId } = await request.json();
-    
-    if (!text) {
-      return NextResponse.json(
-        { error: '缺少文本内容' },
-        { status: 400 }
-      );
-    }
-
-    const response = await synthesizeCharacterSpeech({
-      text,
-      characterId,
-    });
-
-    return NextResponse.json({
-      audioUri: response.audioUrl,
-      audioSize: response.audioSize,
-    });
-  } catch (error) {
+  return createTtsRouteHandler({
+    async getCurrentUser(innerRequest) {
+      return requireAuthenticatedUser(innerRequest);
+    },
+    async synthesizeSpeech(input) {
+      return synthesizeCharacterSpeech(input);
+    },
+    async uploadAudio(input) {
+      return uploadAssetToR2({
+        userId: input.userId,
+        directory: 'audio',
+        buffer: input.buffer,
+        contentType: input.contentType,
+        extension: input.extension,
+      });
+    },
+  })(request).catch(error => {
     console.error('TTS API error:', error);
     if (error instanceof AuthError) {
       return NextResponse.json(
@@ -38,5 +35,5 @@ export async function POST(request: NextRequest) {
     }
     const routeError = toRouteError(error, '语音合成失败，请稍后重试');
     return NextResponse.json(routeError.body, { status: routeError.status });
-  }
+  });
 }

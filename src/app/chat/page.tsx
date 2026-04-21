@@ -251,7 +251,6 @@ ${weather.advice}
       const { text: finalText } = parseMediaMarker(fullContent);
       
       if (finalText) {
-        generateTTS(initialMessage.id, finalText);
         const nextMessages = [{
           ...initialMessage,
           content: finalText,
@@ -261,6 +260,7 @@ ${weather.advice}
         }
         setMessages(nextMessages);
         void syncConversationSnapshot(nextMessages);
+        void generateTTS(initialMessage.id, finalText);
       }
     } catch (error) {
       console.error('Initial greeting error:', error);
@@ -338,6 +338,15 @@ ${weather.advice}
     });
   };
 
+  const getMessageAudioUrl = (messageId: string) => {
+    const cachedAudio = audioMap[messageId];
+    if (cachedAudio) {
+      return cachedAudio;
+    }
+
+    return messages.find(message => message.id === messageId)?.audioUrl;
+  };
+
   // 生成语音
   const generateTTS = async (messageId: string, text: string) => {
     if (!character) return;
@@ -356,6 +365,10 @@ ${weather.advice}
 
       if (data.audioUri) {
         setAudioMap(prev => ({ ...prev, [messageId]: data.audioUri }));
+        updateMessage(messageId, message => ({
+          ...message,
+          audioUrl: data.audioUri,
+        }));
       }
     } catch (error) {
       console.error('TTS error:', error);
@@ -364,7 +377,7 @@ ${weather.advice}
 
   // 播放语音
   const playAudio = (messageId: string) => {
-    const audioUrl = audioMap[messageId];
+    const audioUrl = getMessageAudioUrl(messageId);
     if (!audioUrl) return;
 
     if (audioRef.current) {
@@ -888,7 +901,8 @@ ${weather.advice}
                   {msg.role === 'assistant' && (
                     <button
                       onClick={() => playAudio(msg.id)}
-                      className="ml-2 p-1 rounded-full hover:bg-gray-100 transition-colors"
+                      disabled={!getMessageAudioUrl(msg.id)}
+                      className="ml-2 p-1 rounded-full hover:bg-gray-100 transition-colors disabled:cursor-not-allowed disabled:opacity-40"
                       title={playingId === msg.id ? '停止播放' : '播放语音'}
                     >
                       {playingId === msg.id ? (
