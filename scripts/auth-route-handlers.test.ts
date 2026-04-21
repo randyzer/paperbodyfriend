@@ -61,6 +61,7 @@ async function main() {
         email: ' USER@example.com ',
         password: 'TestPass!123',
         displayName: 'Randy',
+        turnstileToken: 'turnstile-token',
       }),
     }),
   );

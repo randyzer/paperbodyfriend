@@ -3,6 +3,7 @@
 import Link from 'next/link';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { Turnstile } from '@marsidev/react-turnstile';
 
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -18,12 +19,19 @@ export default function RegisterPage() {
   const [displayName, setDisplayName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
     setError(null);
+
+    if (!turnstileToken) {
+      setError('请先完成人机验证。');
+      return;
+    }
+
     setIsSubmitting(true);
 
     try {
@@ -36,6 +44,7 @@ export default function RegisterPage() {
           displayName,
           email,
           password,
+          turnstileToken,
         }),
       });
       const data = await response.json();
@@ -112,6 +121,13 @@ export default function RegisterPage() {
                 {error}
               </p>
             ) : null}
+
+            <Turnstile
+              siteKey={process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY!}
+              onSuccess={token => {
+                setTurnstileToken(token);
+              }}
+            />
 
             <Button
               type="submit"

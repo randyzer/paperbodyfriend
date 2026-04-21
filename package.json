@@ -12,7 +12,7 @@
     "start": "bash ./scripts/start.sh",
     "ts-check": "tsc -p tsconfig.json",
     "test:ai-contract": "node --import tsx scripts/ai-provider-contract.test.ts",
-    "test:auth": "node --import tsx scripts/auth-password.test.ts && node --import tsx scripts/auth-service.test.ts && node --import tsx scripts/auth-route-handlers.test.ts && node --import tsx scripts/profile-avatar-route.test.ts",
+    "test:auth": "node --import tsx scripts/auth-password.test.ts && node --import tsx scripts/auth-service.test.ts && node --import tsx scripts/auth-route-handlers.test.ts && node --import tsx scripts/register-route-turnstile.test.ts && node --import tsx scripts/profile-avatar-route.test.ts",
     "test:build-script": "node --import tsx scripts/build-script.test.ts",
     "test:chat-route": "node --import tsx scripts/chat-route.test.ts",
     "test:conversation": "node --import tsx scripts/conversation-storage.test.ts && node --import tsx scripts/chat-page-storage.test.ts && node --import tsx scripts/conversation-service.test.ts && node --import tsx scripts/conversation-route-handlers.test.ts"
@@ -21,6 +21,7 @@
     "@aws-sdk/client-s3": "^3.958.0",
     "@aws-sdk/lib-storage": "^3.958.0",
     "@hookform/resolvers": "^5.2.2",
+    "@marsidev/react-turnstile": "^1.5.0",
     "@radix-ui/react-accordion": "^1.2.12",
     "@radix-ui/react-alert-dialog": "^1.1.15",
     "@radix-ui/react-aspect-ratio": "^1.1.8",
