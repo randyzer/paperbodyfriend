@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 
 async function main() {
-  const { createEmailService } = await import('../src/lib/email');
+  const { createEmailService, sendWithResendClient } = await import('../src/lib/email');
 
   const sent: Array<{ from: string; to: string; subject: string; html: string }> = [];
   const generatedInputs: Array<{ userName: string; characterId?: string }> = [];
@@ -148,6 +148,29 @@ async function main() {
   assert.equal(batchErrors.length, 1);
   assert.match(batchErrors[0]?.message ?? '', /second@example\.com/);
   assert.match(String(batchErrors[0]?.error), /mail failed/);
+
+  await assert.rejects(
+    sendWithResendClient(
+      {
+        emails: {
+          async send() {
+            return {
+              error: {
+                message: 'testing emails can only be sent to your own email address',
+              },
+            };
+          },
+        },
+      },
+      {
+        from: '纸片人男友 <onboarding@resend.dev>',
+        to: 'other@example.com',
+        subject: 'hello',
+        html: '<p>hi</p>',
+      },
+    ),
+    /testing emails can only be sent to your own email address/,
+  );
 
   console.log('daily love letter test passed.');
 }

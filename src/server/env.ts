@@ -8,6 +8,7 @@ const serverEnvSchema = z.object({
   RESEND_API_KEY: z.string().optional(),
   RESEND_FROM_EMAIL: z.string().optional(),
   APP_BASE_URL: z.string().optional(),
+  CRON_SECRET: z.string().optional(),
 });
 
 let cachedEnv: z.infer<typeof serverEnvSchema> | null = null;

@@ -36,6 +36,15 @@ type EmailServiceDeps = {
   getAppBaseUrl(): string;
 };
 
+type ResendLikeClient = {
+  emails: {
+    send(input: SendEmailInput): Promise<{
+      data?: { id?: string | null } | null;
+      error?: { message?: string | null; name?: string | null } | null;
+    }>;
+  };
+};
+
 function getResendClient() {
   const apiKey = getServerEnv().RESEND_API_KEY?.trim();
 
@@ -66,8 +75,19 @@ function getAppBaseUrl() {
   return appBaseUrl;
 }
 
+export async function sendWithResendClient(
+  client: ResendLikeClient,
+  input: SendEmailInput,
+) {
+  const result = await client.emails.send(input);
+
+  if (result?.error) {
+    throw new Error(result.error.message || 'Resend failed to send email');
+  }
+}
+
 async function defaultSendEmail(input: SendEmailInput) {
-  await getResendClient().emails.send(input);
+  await sendWithResendClient(getResendClient(), input);
 }
 
 async function defaultGenerateLoveLetter(input: LoveLetterInput) {
