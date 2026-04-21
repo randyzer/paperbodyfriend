@@ -5,6 +5,7 @@ type StoredUser = {
   email: string;
   passwordHash: string;
   displayName: string | null;
+  avatarUrl: string | null;
   status: 'active' | 'disabled';
   createdAt: Date;
   updatedAt: Date;
@@ -55,6 +56,7 @@ async function main() {
           email: input.email,
           passwordHash: input.passwordHash,
           displayName: input.displayName,
+          avatarUrl: input.avatarUrl,
           status: input.status,
           createdAt: input.createdAt,
           updatedAt: input.updatedAt,
@@ -69,6 +71,16 @@ async function main() {
           user.lastLoginAt = at;
           user.updatedAt = at;
         }
+      },
+      async updateAvatar(userId: string, avatarUrl: string | null) {
+        const user = users.get(userId);
+        if (!user) {
+          return null;
+        }
+
+        user.avatarUrl = avatarUrl;
+        user.updatedAt = now;
+        return user;
       },
     },
     sessions: {
@@ -129,6 +141,7 @@ async function main() {
 
   assert.equal(registerResult.user.email, 'user@example.com');
   assert.equal(registerResult.user.displayName, 'Randy');
+  assert.equal(registerResult.user.avatarUrl, null);
   assert.equal(registerResult.sessionToken, 'plain-session-token-1');
   assert.equal(users.size, 1);
   assert.equal(sessions.size, 1);
@@ -154,6 +167,7 @@ async function main() {
     email: 'login@example.com',
     passwordHash: seededUserHash,
     displayName: null,
+    avatarUrl: null,
     status: 'active',
     createdAt: now,
     updatedAt: now,
@@ -175,6 +189,15 @@ async function main() {
   );
   assert.ok(registeredSession, 'session lookup should succeed for a fresh token');
   assert.equal(registeredSession?.user.email, 'user@example.com');
+
+  const updatedAvatarUser = await authService.updateAvatar({
+    userId: 'user_2',
+    avatarUrl: 'https://cdn.example.com/avatar-user-2.png',
+  });
+  assert.equal(
+    updatedAvatarUser.avatarUrl,
+    'https://cdn.example.com/avatar-user-2.png',
+  );
 
   await assert.rejects(
     () =>

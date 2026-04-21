@@ -13,6 +13,8 @@ async function main() {
     messages: [],
   };
   let syncConversationError: Error | null = null;
+  let resumeCandidateError: Error | null = null;
+  let createConversationError: Error | null = null;
 
   const handlers = createConversationRouteHandlers({
     async getCurrentUser() {
@@ -22,6 +24,10 @@ async function main() {
     },
     conversationService: {
       async getResumeCandidate(userId: string) {
+        if (resumeCandidateError) {
+          throw resumeCandidateError;
+        }
+
         assert.equal(userId, 'user_1');
         return {
           conversationId: 'conversation_1',
@@ -31,6 +37,10 @@ async function main() {
         };
       },
       async createConversation(input: { userId: string; characterId: string }) {
+        if (createConversationError) {
+          throw createConversationError;
+        }
+
         assert.deepEqual(input, {
           userId: 'user_1',
           characterId: 'uncle',
@@ -92,6 +102,14 @@ async function main() {
     lastMessageAt: '2026-04-20T10:00:00.000Z',
   });
 
+  resumeCandidateError = new Error('missing conversation table');
+  const failedResumeCandidateResponse = await handlers.resumeCandidate();
+  assert.equal(failedResumeCandidateResponse.status, 500);
+  assert.deepEqual(await failedResumeCandidateResponse.json(), {
+    error: 'Conversation service unavailable',
+  });
+  resumeCandidateError = null;
+
   const createConversationResponse = await handlers.createConversation(
     new Request('http://localhost/api/conversations', {
       method: 'POST',
@@ -104,6 +122,20 @@ async function main() {
     conversationId: 'conversation_1',
     characterId: 'uncle',
   });
+
+  createConversationError = new Error('missing conversation table');
+  const failedCreateConversationResponse = await handlers.createConversation(
+    new Request('http://localhost/api/conversations', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ characterId: 'uncle' }),
+    }),
+  );
+  assert.equal(failedCreateConversationResponse.status, 500);
+  assert.deepEqual(await failedCreateConversationResponse.json(), {
+    error: 'Conversation service unavailable',
+  });
+  createConversationError = null;
 
   const invalidCreateConversationJsonResponse = await handlers.createConversation(
     new Request('http://localhost/api/conversations', {

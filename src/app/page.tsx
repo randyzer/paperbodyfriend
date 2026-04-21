@@ -3,13 +3,14 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
-import { LogoutButton } from '@/components/auth/logout-button';
+import { UserAccountMenu } from '@/components/auth/user-account-menu';
 import { ResumeDialog } from '@/components/home/resume-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
 import { useAuthSession } from '@/hooks/use-auth-session';
 import { CHARACTERS } from '@/lib/config';
+import { fetchWithTimeout } from '@/lib/fetch-with-timeout';
 import {
   clearResumeSkipForUser,
   clearConversationStateForUser,
@@ -60,6 +61,7 @@ export default function HomePage() {
   });
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
   const [resumeCandidate, setResumeCandidate] = useState<ResumeCandidate | null>(null);
   const [isCheckingResume, setIsCheckingResume] = useState(true);
   const [resumeDecisionLoading, setResumeDecisionLoading] = useState(false);
@@ -108,8 +110,9 @@ export default function HomePage() {
       }
 
       try {
-        const response = await fetch('/api/conversations/resume-candidate', {
+        const response = await fetchWithTimeout('/api/conversations/resume-candidate', {
           cache: 'no-store',
+          timeoutMs: 5_000,
         });
 
         if (!response.ok) {
@@ -161,12 +164,14 @@ export default function HomePage() {
 
   const handleSelect = (id: string) => {
     setSelectedId(id);
+    setActionError(null);
   };
 
   const handleConfirm = async () => {
     if (!selectedId || !user) return;
 
     setIsLoading(true);
+    setActionError(null);
 
     try {
       const response = await fetch('/api/conversations', {
@@ -176,7 +181,10 @@ export default function HomePage() {
       });
 
       if (!response.ok) {
-        throw new Error('Failed to create conversation');
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string }
+          | null;
+        throw new Error(payload?.error ?? 'Failed to create conversation');
       }
 
       const data = (await response.json()) as {
@@ -190,7 +198,14 @@ export default function HomePage() {
       saveConversationIdForUser(user.id, data.conversationId);
       saveChatHistoryForUser(user.id, []);
       router.push('/chat');
-    } catch {
+    } catch (error) {
+      setActionError(
+        error instanceof Error
+          ? error.message === 'Conversation service unavailable'
+            ? '对话服务还没有准备好，请先完成数据库表初始化。'
+            : '进入对话失败，请稍后重试。'
+          : '进入对话失败，请稍后重试。',
+      );
       setIsLoading(false);
     }
   };
@@ -243,9 +258,14 @@ export default function HomePage() {
   };
 
   if (sessionLoading || !authenticated || isCheckingResume) {
+    const loadingMessage =
+      sessionLoading || !authenticated
+        ? '正在检查登录状态...'
+        : '正在加载历史对话...';
+
     return (
       <div className="flex min-h-screen items-center justify-center bg-pink-50">
-        <p className="text-sm text-gray-500">正在检查登录状态...</p>
+        <p className="text-sm text-gray-500">{loadingMessage}</p>
       </div>
     );
   }
@@ -265,7 +285,13 @@ export default function HomePage() {
 
       <div className="container mx-auto max-w-4xl px-4 py-8">
         <div className="mb-4 flex justify-end">
-          <LogoutButton />
+          {user ? (
+            <UserAccountMenu
+              displayName={user.displayName}
+              email={user.email}
+              avatarUrl={user.avatarUrl}
+            />
+          ) : null}
         </div>
 
         <div className="mb-12 text-center">
@@ -323,6 +349,11 @@ export default function HomePage() {
         </div>
 
         <div className="text-center">
+          {actionError ? (
+            <p className="mb-4 text-sm text-red-500" role="alert">
+              {actionError}
+            </p>
+          ) : null}
           <Button
             size="lg"
             disabled={!selectedId || isLoading}

@@ -11,7 +11,7 @@ import { Send, Volume2, VolumeX, RefreshCw } from 'lucide-react';
 import { buildRequestedVideoPrompt } from '@/lib/ai/video-intent';
 import { CHARACTERS } from '@/lib/config';
 import { DEFAULT_CHARACTER_VIDEO_OPTIONS } from '@/lib/video-presets';
-import { LogoutButton } from '@/components/auth/logout-button';
+import { UserAccountMenu } from '@/components/auth/user-account-menu';
 import { useAuthSession } from '@/hooks/use-auth-session';
 import {
   CLIENT_VIDEO_POLL_INTERVAL_MS,
@@ -813,7 +813,14 @@ ${weather.advice}
         </div>
         
         <div className="flex items-center gap-2">
-          <LogoutButton variant="ghost" size="sm" />
+          {user ? (
+            <UserAccountMenu
+              displayName={user.displayName}
+              email={user.email}
+              avatarUrl={user.avatarUrl}
+              compact
+            />
+          ) : null}
           <Button
             variant="ghost"
             size="icon"

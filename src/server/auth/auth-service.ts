@@ -26,6 +26,7 @@ export type AuthUserRecord = {
   email: string;
   passwordHash: string;
   displayName: string | null;
+  avatarUrl: string | null;
   status: 'active' | 'disabled';
   createdAt: Date;
   updatedAt: Date;
@@ -48,6 +49,7 @@ export type AuthPublicUser = {
   id: string;
   email: string;
   displayName: string | null;
+  avatarUrl: string | null;
 };
 
 type UserRepository = {
@@ -55,6 +57,7 @@ type UserRepository = {
   findById(id: string): Promise<AuthUserRecord | null>;
   create(input: AuthUserRecord): Promise<AuthUserRecord>;
   touchLastLogin(userId: string, at: Date): Promise<void>;
+  updateAvatar(userId: string, avatarUrl: string | null): Promise<AuthUserRecord | null>;
 };
 
 type SessionRepository = {
@@ -116,6 +119,7 @@ function toPublicUser(user: AuthUserRecord): AuthPublicUser {
     id: user.id,
     email: user.email,
     displayName: user.displayName,
+    avatarUrl: user.avatarUrl,
   };
 }
 
@@ -184,6 +188,7 @@ export function createAuthService(options: CreateAuthServiceOptions) {
         email,
         passwordHash: await hashPassword(input.password),
         displayName: normalizeDisplayName(input.displayName),
+        avatarUrl: null,
         status: 'active',
         createdAt,
         updatedAt: createdAt,
@@ -266,6 +271,21 @@ export function createAuthService(options: CreateAuthServiceOptions) {
       }
 
       await options.sessions.revokeByTokenHash(hashSessionToken(token), now());
+    },
+
+    async updateAvatar(input: { userId: string; avatarUrl: string | null }) {
+      const updatedUser = await options.users.updateAvatar(input.userId, input.avatarUrl);
+
+      if (!updatedUser) {
+        throw new AuthError(
+          'INVALID_CREDENTIALS',
+          'User not found',
+          404,
+          '当前用户不存在，请重新登录后重试。',
+        );
+      }
+
+      return toPublicUser(updatedUser);
     },
   };
 }

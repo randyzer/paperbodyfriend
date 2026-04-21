@@ -55,6 +55,13 @@ function badRequest(message: string) {
   return NextResponse.json({ error: message }, { status: 400 });
 }
 
+function internalError() {
+  return NextResponse.json(
+    { error: 'Conversation service unavailable' },
+    { status: 500 },
+  );
+}
+
 async function readJsonBody(request: Request) {
   try {
     return await request.json();
@@ -66,14 +73,18 @@ async function readJsonBody(request: Request) {
 export function createConversationRouteHandlers(deps: ConversationRouteDeps) {
   return {
     async resumeCandidate() {
-      const user = await deps.getCurrentUser();
-      const candidate = await deps.conversationService.getResumeCandidate(user.id);
+      try {
+        const user = await deps.getCurrentUser();
+        const candidate = await deps.conversationService.getResumeCandidate(user.id);
 
-      return NextResponse.json({
-        hasResumeCandidate: Boolean(candidate),
-        source: candidate ? 'database' : null,
-        ...(candidate ?? {}),
-      });
+        return NextResponse.json({
+          hasResumeCandidate: Boolean(candidate),
+          source: candidate ? 'database' : null,
+          ...(candidate ?? {}),
+        });
+      } catch {
+        return internalError();
+      }
     },
 
     async createConversation(request: Request) {
@@ -106,26 +117,30 @@ export function createConversationRouteHandlers(deps: ConversationRouteDeps) {
           return badRequest(error.message);
         }
 
-        throw error;
+        return internalError();
       }
     },
 
     async getConversation(_request: Request, context: RouteContext) {
-      const user = await deps.getCurrentUser();
-      const { conversationId } = await context.params;
-      const detail = await deps.conversationService.getConversationDetail({
-        userId: user.id,
-        conversationId,
-      });
+      try {
+        const user = await deps.getCurrentUser();
+        const { conversationId } = await context.params;
+        const detail = await deps.conversationService.getConversationDetail({
+          userId: user.id,
+          conversationId,
+        });
 
-      if (!detail) {
-        return NextResponse.json(
-          { error: 'Conversation not found' },
-          { status: 404 },
-        );
+        if (!detail) {
+          return NextResponse.json(
+            { error: 'Conversation not found' },
+            { status: 404 },
+          );
+        }
+
+        return NextResponse.json(detail);
+      } catch {
+        return internalError();
       }
-
-      return NextResponse.json(detail);
     },
 
     async syncMessages(request: Request, context: RouteContext) {
@@ -175,7 +190,7 @@ export function createConversationRouteHandlers(deps: ConversationRouteDeps) {
           }
         }
 
-        throw error;
+        return internalError();
       }
     },
   };

@@ -13,6 +13,7 @@ async function main() {
             id: 'user_1',
             email: input.email.trim().toLowerCase(),
             displayName: input.displayName ?? null,
+            avatarUrl: 'https://cdn.example.com/avatar-register.png',
           },
           sessionToken: 'register-token',
           expiresAt: new Date('2026-05-20T08:00:00.000Z'),
@@ -24,6 +25,7 @@ async function main() {
             id: 'user_1',
             email: input.email.trim().toLowerCase(),
             displayName: 'Randy',
+            avatarUrl: 'https://cdn.example.com/avatar-login.png',
           },
           sessionToken: 'login-token',
           expiresAt: new Date('2026-05-20T08:00:00.000Z'),
@@ -40,6 +42,7 @@ async function main() {
             id: 'user_1',
             email: 'user@example.com',
             displayName: 'Randy',
+            avatarUrl: 'https://cdn.example.com/avatar-session.png',
           },
           session: {
             id: 'session_1',
@@ -72,6 +75,7 @@ async function main() {
       id: 'user_1',
       email: 'user@example.com',
       displayName: 'Randy',
+      avatarUrl: 'https://cdn.example.com/avatar-register.png',
     },
   });
 
@@ -91,6 +95,14 @@ async function main() {
     loginResponse.headers.get('set-cookie') ?? '',
     /paperboyfriend_session=login-token/,
   );
+  assert.deepEqual(await loginResponse.json(), {
+    user: {
+      id: 'user_1',
+      email: 'user@example.com',
+      displayName: 'Randy',
+      avatarUrl: 'https://cdn.example.com/avatar-login.png',
+    },
+  });
 
   const sessionResponse = await authHandlers.session(
     new Request('http://localhost/api/auth/session', {
@@ -108,6 +120,7 @@ async function main() {
       id: 'user_1',
       email: 'user@example.com',
       displayName: 'Randy',
+      avatarUrl: 'https://cdn.example.com/avatar-session.png',
     },
   });
 

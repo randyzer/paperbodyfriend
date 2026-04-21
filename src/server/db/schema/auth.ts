@@ -7,6 +7,7 @@ export const users = pgTable(
     email: text('email').notNull(),
     passwordHash: text('password_hash').notNull(),
     displayName: text('display_name'),
+    avatarUrl: text('avatar_url'),
     status: text('status').$type<'active' | 'disabled'>().notNull().default('active'),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

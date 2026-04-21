@@ -24,6 +24,7 @@ export async function getAuthenticatedSession(request: Request) {
         id: 'test-user',
         email: 'test@example.com',
         displayName: 'Test User',
+        avatarUrl: null,
       },
       session: {
         id: 'test-session',

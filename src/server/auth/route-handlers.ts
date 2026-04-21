@@ -16,7 +16,7 @@ type AuthRouteDeps = {
       userAgent?: string | null;
       ipAddress?: string | null;
     }): Promise<{
-      user: { id: string; email: string; displayName: string | null };
+      user: { id: string; email: string; displayName: string | null; avatarUrl: string | null };
       sessionToken: string;
       expiresAt: Date;
     }>;
@@ -26,13 +26,13 @@ type AuthRouteDeps = {
       userAgent?: string | null;
       ipAddress?: string | null;
     }): Promise<{
-      user: { id: string; email: string; displayName: string | null };
+      user: { id: string; email: string; displayName: string | null; avatarUrl: string | null };
       sessionToken: string;
       expiresAt: Date;
     }>;
     logout(token: string | null | undefined): Promise<void>;
     getSessionByToken(token: string | null | undefined): Promise<{
-      user: { id: string; email: string; displayName: string | null };
+      user: { id: string; email: string; displayName: string | null; avatarUrl: string | null };
       session: { id: string; expiresAt: Date };
     } | null>;
   };

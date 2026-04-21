@@ -37,6 +37,19 @@ export const authUserRepository = {
       })
       .where(eq(users.id, userId));
   },
+
+  async updateAvatar(userId: string, avatarUrl: string | null): Promise<AuthUserRecord | null> {
+    const [updatedUser] = await db
+      .update(users)
+      .set({
+        avatarUrl,
+        updatedAt: new Date(),
+      })
+      .where(eq(users.id, userId))
+      .returning();
+
+    return updatedUser ?? null;
+  },
 };
 
 export const authSessionRepository = {

@@ -3,10 +3,13 @@
 import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 
+import { fetchWithTimeout } from '@/lib/fetch-with-timeout';
+
 type SessionUser = {
   id: string;
   email: string;
   displayName: string | null;
+  avatarUrl: string | null;
 };
 
 type SessionResponse =
@@ -36,8 +39,9 @@ export function useAuthSession(options: UseAuthSessionOptions = {}) {
 
     async function loadSession() {
       try {
-        const response = await fetch('/api/auth/session', {
+        const response = await fetchWithTimeout('/api/auth/session', {
           cache: 'no-store',
+          timeoutMs: 5_000,
         });
         const data = (await response.json()) as SessionResponse;
 
