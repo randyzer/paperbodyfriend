@@ -15,8 +15,7 @@
     "test:auth": "node --import tsx scripts/auth-password.test.ts && node --import tsx scripts/auth-service.test.ts && node --import tsx scripts/auth-route-handlers.test.ts && node --import tsx scripts/register-route-turnstile.test.ts && node --import tsx scripts/profile-avatar-route.test.ts",
     "test:build-script": "node --import tsx scripts/build-script.test.ts",
     "test:chat-route": "node --import tsx scripts/chat-route.test.ts",
-    "test:conversation": "node --import tsx scripts/conversation-storage.test.ts && node --import tsx scripts/chat-page-storage.test.ts && node --import tsx scripts/conversation-service.test.ts && node --import tsx scripts/conversation-route-handlers.test.ts"
-    ,
+    "test:conversation": "node --import tsx scripts/conversation-storage.test.ts && node --import tsx scripts/chat-page-storage.test.ts && node --import tsx scripts/conversation-service.test.ts && node --import tsx scripts/conversation-route-handlers.test.ts",
     "test:image-route": "node --import tsx scripts/image-route-handler.test.ts",
     "test:media-routes": "node --import tsx scripts/image-route-handler.test.ts && node --import tsx scripts/video-route-handler.test.ts && node --import tsx scripts/tts-route-handler.test.ts"
   },
@@ -72,6 +71,7 @@
     "react-hook-form": "^7.70.0",
     "react-resizable-panels": "^4.2.0",
     "recharts": "2.15.4",
+    "resend": "^6.12.2",
     "sonner": "^2.0.7",
     "tailwind-merge": "^2.6.0",
     "tw-animate-css": "^1.4.0",

@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 
+import { sendWelcomeEmail } from '@/lib/email';
 import { createAuthRouteHandlers } from '@/server/auth/route-handlers';
 import { getAuthService } from '@/server/auth/default-auth-service';
 import { getServerEnv } from '@/server/env';
@@ -11,6 +12,7 @@ type RegisterRouteDeps = {
     register(request: Request): Promise<Response>;
   };
   verifyTurnstile(input: { token: string }): Promise<boolean>;
+  sendWelcomeEmail(email: string, name: string): Promise<void>;
 };
 
 function readRegisterPayload(body: unknown) {
@@ -19,6 +21,21 @@ function readRegisterPayload(body: unknown) {
   }
 
   return body as Record<string, unknown>;
+}
+
+function readString(record: Record<string, unknown>, key: string): string | null {
+  const value = record[key];
+  return typeof value === 'string' && value.trim() ? value.trim() : null;
+}
+
+function getWelcomeUserName(input: { email: string; displayName?: string | null }) {
+  const displayName = input.displayName?.trim();
+  if (displayName) {
+    return displayName;
+  }
+
+  const localPart = input.email.split('@')[0]?.trim();
+  return localPart || input.email;
 }
 
 export function createRegisterRoute(deps: RegisterRouteDeps) {
@@ -75,7 +92,44 @@ export function createRegisterRoute(deps: RegisterRouteDeps) {
       body: JSON.stringify(registrationData),
     });
 
-    return deps.authHandlers.register(forwardedRequest);
+    const response = await deps.authHandlers.register(forwardedRequest);
+
+    if (!response.ok || response.status !== 201) {
+      return response;
+    }
+
+    const responsePayload = (await response
+      .clone()
+      .json()
+      .catch(() => null)) as
+      | {
+          user?: {
+            email?: string | null;
+            displayName?: string | null;
+          };
+        }
+      | null;
+
+    const responseUser = responsePayload?.user;
+    const welcomeEmail =
+      responseUser?.email?.trim() ||
+      readString(registrationData, 'email');
+    const welcomeName = getWelcomeUserName({
+      email: welcomeEmail || '',
+      displayName:
+        responseUser?.displayName ??
+        readString(registrationData, 'displayName'),
+    });
+
+    if (welcomeEmail) {
+      try {
+        await deps.sendWelcomeEmail(welcomeEmail, welcomeName);
+      } catch (error) {
+        console.error('欢迎邮件发送失败：', error);
+      }
+    }
+
+    return response;
   };
 }
 
@@ -107,5 +161,6 @@ export async function POST(request: Request) {
       authService: await getAuthService(),
     }),
     verifyTurnstile: verifyTurnstileToken,
+    sendWelcomeEmail,
   })(request);
 }
