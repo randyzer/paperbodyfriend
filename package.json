@@ -5,10 +5,16 @@
   "scripts": {
     "build": "bash ./scripts/build.sh",
     "dev": "bash ./scripts/dev.sh",
+    "db:generate": "drizzle-kit generate",
+    "db:push": "drizzle-kit push",
     "preinstall": "npx only-allow pnpm",
     "lint": "eslint",
     "start": "bash ./scripts/start.sh",
-    "ts-check": "tsc -p tsconfig.json"
+    "ts-check": "tsc -p tsconfig.json",
+    "test:ai-contract": "node --import tsx scripts/ai-provider-contract.test.ts",
+    "test:auth": "node --import tsx scripts/auth-password.test.ts && node --import tsx scripts/auth-service.test.ts && node --import tsx scripts/auth-route-handlers.test.ts",
+    "test:chat-route": "node --import tsx scripts/chat-route.test.ts",
+    "test:conversation": "node --import tsx scripts/conversation-storage.test.ts && node --import tsx scripts/chat-page-storage.test.ts && node --import tsx scripts/conversation-service.test.ts && node --import tsx scripts/conversation-route-handlers.test.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.958.0",
@@ -44,7 +50,6 @@
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "cmdk": "^1.1.1",
-    "coze-coding-dev-sdk": "^0.7.17",
     "date-fns": "^4.1.0",
     "dotenv": "^17.2.3",
     "drizzle-kit": "^0.31.8",

@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ImageGenerationClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
+import { toRouteError } from '@/lib/ai/errors';
+import { generateCharacterImage } from '@/lib/ai/services/media-service';
+import { AuthError } from '@/server/auth/auth-service';
+import { requireAuthenticatedUser } from '@/server/auth/request-auth';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
+    await requireAuthenticatedUser(request);
+
     const { prompt, referenceImage } = await request.json();
     
     if (!prompt) {
@@ -14,38 +19,25 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 提取headers
-    const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
-
-    // 初始化图像生成客户端
-    const config = new Config();
-    const client = new ImageGenerationClient(config, customHeaders);
-
-    // 生成图像（支持图生图）
-    const response = await client.generate({
+    const response = await generateCharacterImage({
       prompt,
-      image: referenceImage, // 参考图片URL，用于保持风格一致
-      size: '2K',
-      watermark: true,
+      referenceImage,
     });
-
-    const helper = client.getResponseHelper(response);
-
-    if (!helper.success) {
-      return NextResponse.json(
-        { error: helper.errorMessages[0] || '图像生成失败' },
-        { status: 500 }
-      );
-    }
 
     return NextResponse.json({
-      imageUrls: helper.imageUrls,
+      imageUrls: response.imageUrls,
     });
+
+
   } catch (error) {
     console.error('Image API error:', error);
-    return NextResponse.json(
-      { error: '图像生成失败，请稍后重试' },
-      { status: 500 }
-    );
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.userMessage, code: error.code },
+        { status: error.statusCode },
+      );
+    }
+    const routeError = toRouteError(error, '图像生成失败，请稍后重试');
+    return NextResponse.json(routeError.body, { status: routeError.status });
   }
 }

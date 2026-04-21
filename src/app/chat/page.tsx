@@ -4,21 +4,47 @@ import { useState, useRef, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Send, Volume2, VolumeX, RefreshCw } from 'lucide-react';
+import { buildRequestedVideoPrompt } from '@/lib/ai/video-intent';
 import { CHARACTERS } from '@/lib/config';
-import { 
-  ChatMessage, 
-  getSelectedCharacter, 
-  getChatHistory, 
-  saveChatHistory,
-  clearAllData
+import { DEFAULT_CHARACTER_VIDEO_OPTIONS } from '@/lib/video-presets';
+import { LogoutButton } from '@/components/auth/logout-button';
+import { useAuthSession } from '@/hooks/use-auth-session';
+import {
+  CLIENT_VIDEO_POLL_INTERVAL_MS,
+  CLIENT_VIDEO_POLL_MAX_ATTEMPTS,
+  getFailedVideoMessage,
+  getPendingVideoMessage,
+  getQueuedVideoMessage,
+  isPendingVideoMessage,
+  VideoJobKind,
+} from '@/lib/video-jobs';
+import {
+  ChatMessage,
+  clearConversationStateForUser,
+  getChatHistoryForUser,
+  getConversationIdForUser,
+  getSelectedCharacterForUser,
+  markResumeSkipForUser,
+  saveChatHistoryForUser,
 } from '@/lib/storage';
+
+type ConversationDetailResponse = {
+  conversation: {
+    id: string;
+    characterId: string;
+  };
+  messages: ChatMessage[];
+};
 
 export default function ChatPage() {
   const router = useRouter();
+  const { isLoading: sessionLoading, authenticated, user } = useAuthSession({
+    required: true,
+  });
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -26,47 +52,122 @@ export default function ChatPage() {
   const [playingId, setPlayingId] = useState<string | null>(null);
   const [audioMap, setAudioMap] = useState<Record<string, string>>({});
   const [initialized, setInitialized] = useState(false);
+  const [isRestoringConversation, setIsRestoringConversation] = useState(true);
   const [messageCount, setMessageCount] = useState(0); // 追踪对话轮数
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
+  const activeVideoPollsRef = useRef<Set<string>>(new Set());
+  const hasResumedPendingVideosRef = useRef(false);
 
   // 初始化 - 获取角色和历史
   useEffect(() => {
-    const characterId = getSelectedCharacter();
-    
-    if (!characterId) {
-      router.push('/');
+    if (!user) {
       return;
     }
 
-    const char = CHARACTERS[characterId as keyof typeof CHARACTERS];
-    setCharacter(char);
-    
-    const history = getChatHistory();
-    if (history.length > 0) {
-      setMessages(history);
-      // 计算已有对话轮数（用户消息数）
-      const userMsgCount = history.filter(m => m.role === 'user').length;
-      setMessageCount(userMsgCount);
-      setInitialized(true);
-    } else {
-      setInitialized(false);
+    const currentUser = user;
+    let active = true;
+
+    async function loadConversationState() {
+      setIsRestoringConversation(true);
+      hasResumedPendingVideosRef.current = false;
+
+      const characterId = getSelectedCharacterForUser(currentUser.id);
+      const conversationId = getConversationIdForUser(currentUser.id);
+      const history = getChatHistoryForUser(currentUser.id);
+
+      if (!characterId || !conversationId) {
+        clearConversationStateForUser(currentUser.id);
+        router.push('/');
+        return;
+      }
+
+      const char = CHARACTERS[characterId as keyof typeof CHARACTERS];
+      if (!char) {
+        clearConversationStateForUser(currentUser.id);
+        router.push('/');
+        return;
+      }
+
+      setCharacter(char);
+
+      if (history.length > 0) {
+        setMessages(history);
+        setMessageCount(history.filter(message => message.role === 'user').length);
+        setInitialized(true);
+        setIsRestoringConversation(false);
+        return;
+      }
+
+      try {
+        const response = await fetch(`/api/conversations/${conversationId}`, {
+          cache: 'no-store',
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to load conversation');
+        }
+
+        const data = (await response.json()) as ConversationDetailResponse;
+        if (!active) {
+          return;
+        }
+
+        saveChatHistoryForUser(currentUser.id, data.messages);
+        setMessages(data.messages);
+        setMessageCount(data.messages.filter(message => message.role === 'user').length);
+        setInitialized(data.messages.length > 0);
+      } catch {
+        if (active) {
+          clearConversationStateForUser(currentUser.id);
+          router.push('/');
+        }
+      } finally {
+        if (active) {
+          setIsRestoringConversation(false);
+        }
+      }
     }
-  }, []);
+
+    void loadConversationState();
+
+    return () => {
+      active = false;
+    };
+  }, [router, user]);
 
   // 发送初始问候 - 当character设置好且没有历史记录时
   useEffect(() => {
-    if (character && !initialized && messages.length === 0) {
-      sendInitialGreeting();
+    if (character && !isRestoringConversation && !initialized && messages.length === 0) {
+      void sendInitialGreeting();
       setInitialized(true);
     }
-  }, [character, initialized]);
+  }, [character, initialized, isRestoringConversation, messages.length]);
 
   // 自动滚动到底部
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [messages]);
+
+  useEffect(() => {
+    if (!initialized || hasResumedPendingVideosRef.current || messages.length === 0) {
+      return;
+    }
+
+    hasResumedPendingVideosRef.current = true;
+
+    for (const message of messages) {
+      if (isPendingVideoMessage(message)) {
+        void pollVideoResult(
+          message.id,
+          message.videoRequestId,
+          message.pendingCaption,
+          message.mediaKind,
+        );
+      }
+    }
+  }, [initialized, messages]);
 
   // 获取天气信息（模拟）
   const getWeatherInfo = () => {
@@ -147,14 +248,19 @@ ${weather.advice}
       }
 
       // 最终解析
-      const { text: finalText, mediaType } = parseMediaMarker(fullContent);
+      const { text: finalText } = parseMediaMarker(fullContent);
       
       if (finalText) {
         generateTTS(initialMessage.id, finalText);
-        saveChatHistory([{
+        const nextMessages = [{
           ...initialMessage,
-          content: finalText
-        }]);
+          content: finalText,
+        }];
+        if (user) {
+          saveChatHistoryForUser(user.id, nextMessages);
+        }
+        setMessages(nextMessages);
+        void syncConversationSnapshot(nextMessages);
       }
     } catch (error) {
       console.error('Initial greeting error:', error);
@@ -170,7 +276,10 @@ ${weather.advice}
       };
 
       setMessages([fallbackMessage]);
-      saveChatHistory([fallbackMessage]);
+      if (user) {
+        saveChatHistoryForUser(user.id, [fallbackMessage]);
+      }
+      void syncConversationSnapshot([fallbackMessage]);
       generateTTS(fallbackMessage.id, fallbackMessage.content);
     } finally {
       setIsLoading(false);
@@ -189,6 +298,46 @@ ${weather.advice}
     return { text: content, mediaType: null };
   };
 
+  const syncConversationSnapshot = async (nextMessages: ChatMessage[]) => {
+    if (!user || !character) return;
+
+    const conversationId = getConversationIdForUser(user.id);
+    if (!conversationId) return;
+
+    try {
+      const response = await fetch(`/api/conversations/${conversationId}/messages/sync`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          characterId: character.id,
+          messages: nextMessages,
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to sync conversation snapshot');
+      }
+    } catch (error) {
+      console.warn('Conversation sync error:', error);
+    }
+  };
+
+  const updateMessage = (
+    messageId: string,
+    updater: (message: ChatMessage) => ChatMessage,
+  ) => {
+    setMessages(prev => {
+      const nextMessages = prev.map(message =>
+        message.id === messageId ? updater(message) : message,
+      );
+      if (user) {
+        saveChatHistoryForUser(user.id, nextMessages);
+      }
+      void syncConversationSnapshot(nextMessages);
+      return nextMessages;
+    });
+  };
+
   // 生成语音
   const generateTTS = async (messageId: string, text: string) => {
     if (!character) return;
@@ -201,6 +350,10 @@ ${weather.advice}
       });
 
       const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || '语音生成失败');
+      }
+
       if (data.audioUri) {
         setAudioMap(prev => ({ ...prev, [messageId]: data.audioUri }));
       }
@@ -267,7 +420,10 @@ ${weather.advice}
         
         setMessages(prev => {
           const newMessages = [...prev, imageMessage];
-          saveChatHistory(newMessages);
+          if (user) {
+            saveChatHistoryForUser(user.id, newMessages);
+          }
+          void syncConversationSnapshot(newMessages);
           return newMessages;
         });
         
@@ -279,102 +435,205 @@ ${weather.advice}
   };
 
   // 生成AI跳舞视频
-  const generateDance = async (caption?: string) => {
-    if (!character) return;
+  const createVideoPendingMessage = (
+    messageId: string,
+    caption: string,
+    kind: VideoJobKind,
+  ): ChatMessage => ({
+    id: messageId,
+    role: 'assistant',
+    content: getPendingVideoMessage(kind),
+    timestamp: Date.now(),
+    type: 'text',
+    videoStatus: 'pending',
+    pendingCaption: caption,
+    mediaKind: kind,
+  });
 
-    type CharId = 'uncle' | 'sunshine' | 'straight_man';
-    const charId = character.id as CharId;
+  const startVideoJob = async (kind: VideoJobKind, prompt: string, caption: string) => {
+    if (!character) return;
+    const pendingMessageId = `msg_${Date.now()}_${kind}_pending`;
+    const pendingMessage = createVideoPendingMessage(pendingMessageId, caption, kind);
+
+    setMessages(prev => {
+      const newMessages = [...prev, pendingMessage];
+      if (user) {
+        saveChatHistoryForUser(user.id, newMessages);
+      }
+      void syncConversationSnapshot(newMessages);
+      return newMessages;
+    });
     
     try {
-      // 使用角色的跳舞prompt，并传入头像作为首帧保持人物一致
       const response = await fetch('/api/video', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ 
-          prompt: character.dancePrompt,
-          duration: 5,
+          prompt,
+          duration: DEFAULT_CHARACTER_VIDEO_OPTIONS.duration,
+          ratio: DEFAULT_CHARACTER_VIDEO_OPTIONS.ratio,
+          resolution: DEFAULT_CHARACTER_VIDEO_OPTIONS.resolution,
           firstFrameUrl: character.avatar
         }),
       });
 
       const data = await response.json();
-      
-      if (data.videoUrl) {
-        const captionsByChar: Record<CharId, string[]> = {
-          uncle: ['给你跳个舞', '献丑了', '希望你喜欢'],
-          sunshine: ['看我给你跳个舞！', '嘿嘿，来一段！', '看我的！'],
-          straight_man: ['不太会跳...但还是给你看', '跳得不好别笑话我', '试试看...']
-        };
-        
-        const videoMessage: ChatMessage = {
-          id: `msg_${Date.now()}_video`,
-          role: 'assistant',
-          content: caption || captionsByChar[charId][Math.floor(Math.random() * 3)],
-          timestamp: Date.now(),
-          type: 'video',
-          mediaUrl: data.videoUrl,
-        };
-        
-        setMessages(prev => {
-          const newMessages = [...prev, videoMessage];
-          saveChatHistory(newMessages);
-          return newMessages;
-        });
-        
-        generateTTS(videoMessage.id, videoMessage.content);
+
+      if (!response.ok) {
+        throw new Error(data.error || '视频任务提交失败');
       }
+
+      if (!data.requestId) {
+        throw new Error('视频任务提交失败，请稍后重试');
+      }
+      updateMessage(pendingMessageId, message => ({
+        ...message,
+        videoRequestId: data.requestId,
+      }));
+
+      void pollVideoResult(pendingMessageId, data.requestId, caption, kind);
     } catch (error) {
-      console.error('Video generation error:', error);
+      console.warn('Video generation error:', error);
+      updateMessage(pendingMessageId, message => ({
+        ...message,
+        content: getFailedVideoMessage(kind),
+        type: 'text',
+        mediaUrl: undefined,
+        videoStatus: 'failed',
+        videoRequestId: undefined,
+      }));
     }
   };
 
-  // 生成AI运动视频
-  const generateWorkout = async (caption?: string) => {
+  const generateDance = async (caption?: string, userRequest?: string) => {
     if (!character) return;
 
     type CharId = 'uncle' | 'sunshine' | 'straight_man';
     const charId = character.id as CharId;
-    
-    try {
-      // 使用角色的运动prompt，并传入头像作为首帧保持人物一致
-      const response = await fetch('/api/video', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          prompt: character.workoutPrompt,
-          duration: 5,
-          firstFrameUrl: character.avatar
-        }),
-      });
+    const captionsByChar: Record<CharId, string[]> = {
+      uncle: ['给你跳个舞', '献丑了', '希望你喜欢'],
+      sunshine: ['看我给你跳个舞！', '嘿嘿，来一段！', '看我的！'],
+      straight_man: ['不太会跳...但还是给你看', '跳得不好别笑话我', '试试看...']
+    };
 
-      const data = await response.json();
-      
-      if (data.videoUrl) {
-        const captionsByChar: Record<CharId, string[]> = {
-          uncle: ['刚健完身，给你看看', '今天的运动打卡', '运动完精神好多了'],
-          sunshine: ['看我健身！', '今天练得很爽！', '流汗的感觉真棒~'],
-          straight_man: ['刚在健身房...', '运动视频...有点尴尬', '练了一会儿']
-        };
-        
-        const videoMessage: ChatMessage = {
-          id: `msg_${Date.now()}_workout`,
-          role: 'assistant',
-          content: caption || captionsByChar[charId][Math.floor(Math.random() * 3)],
-          timestamp: Date.now(),
-          type: 'video',
-          mediaUrl: data.videoUrl,
-        };
-        
-        setMessages(prev => {
-          const newMessages = [...prev, videoMessage];
-          saveChatHistory(newMessages);
-          return newMessages;
+    const finalCaption = caption || captionsByChar[charId][Math.floor(Math.random() * 3)];
+    const finalPrompt = buildRequestedVideoPrompt({
+      kind: 'dance',
+      basePrompt: character.dancePrompt,
+      userRequest,
+    });
+
+    await startVideoJob('dance', finalPrompt, finalCaption);
+  };
+
+  // 生成AI运动视频
+  const generateWorkout = async (caption?: string, userRequest?: string) => {
+    if (!character) return;
+
+    type CharId = 'uncle' | 'sunshine' | 'straight_man';
+    const charId = character.id as CharId;
+    const captionsByChar: Record<CharId, string[]> = {
+      uncle: ['刚健完身，给你看看', '今天的运动打卡', '运动完精神好多了'],
+      sunshine: ['看我健身！', '今天练得很爽！', '流汗的感觉真棒~'],
+      straight_man: ['刚在健身房...', '运动视频...有点尴尬', '练了一会儿']
+    };
+
+    const finalCaption = caption || captionsByChar[charId][Math.floor(Math.random() * 3)];
+    const finalPrompt = buildRequestedVideoPrompt({
+      kind: 'workout',
+      basePrompt: character.workoutPrompt,
+      userRequest,
+    });
+
+    await startVideoJob('workout', finalPrompt, finalCaption);
+  };
+
+  const pollVideoResult = async (
+    messageId: string,
+    requestId: string,
+    finalCaption: string,
+    kind: VideoJobKind,
+  ): Promise<void> => {
+    if (activeVideoPollsRef.current.has(messageId)) {
+      return;
+    }
+
+    activeVideoPollsRef.current.add(messageId);
+
+    try {
+      for (let attempt = 0; attempt < CLIENT_VIDEO_POLL_MAX_ATTEMPTS; attempt += 1) {
+        const response = await fetch('/api/video', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ requestId }),
         });
-        
-        generateTTS(videoMessage.id, videoMessage.content);
+
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || '视频状态查询失败');
+        }
+
+        if (data.status === 'completed' && data.videoUrl) {
+          updateMessage(messageId, message => ({
+            ...message,
+            content: finalCaption,
+            type: 'video',
+            mediaUrl: data.videoUrl,
+            videoStatus: 'completed',
+            videoRequestId: requestId,
+            pendingCaption: undefined,
+          }));
+
+          generateTTS(messageId, finalCaption);
+          return;
+        }
+
+        if (data.status === 'failed') {
+          updateMessage(messageId, message => ({
+            ...message,
+            content: getFailedVideoMessage(kind),
+            type: 'text',
+            mediaUrl: undefined,
+            videoStatus: 'failed',
+            videoRequestId: undefined,
+            pendingCaption: undefined,
+          }));
+          return;
+        }
+
+        if (attempt > 0 && attempt % 6 === 0) {
+          updateMessage(messageId, message => ({
+            ...message,
+            content: getQueuedVideoMessage(kind),
+            type: 'text',
+            videoStatus: 'pending',
+            videoRequestId: requestId,
+          }));
+        }
+
+        await new Promise(resolve => setTimeout(resolve, CLIENT_VIDEO_POLL_INTERVAL_MS));
       }
+
+      updateMessage(messageId, message => ({
+        ...message,
+        content: getQueuedVideoMessage(kind),
+        type: 'text',
+        mediaUrl: undefined,
+        videoStatus: 'pending',
+        videoRequestId: requestId,
+      }));
     } catch (error) {
-      console.error('Workout video generation error:', error);
+      console.warn('Video poll error:', error);
+      updateMessage(messageId, message => ({
+        ...message,
+        content: getQueuedVideoMessage(kind),
+        type: 'text',
+        mediaUrl: undefined,
+        videoStatus: 'pending',
+        videoRequestId: requestId,
+      }));
+    } finally {
+      activeVideoPollsRef.current.delete(messageId);
     }
   };
 
@@ -392,6 +651,10 @@ ${weather.advice}
 
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
+    if (user) {
+      saveChatHistoryForUser(user.id, newMessages);
+    }
+    void syncConversationSnapshot(newMessages);
     
     setInputText('');
     setIsLoading(true);
@@ -469,7 +732,10 @@ ${weather.advice}
         generateTTS(assistantMessage.id, finalText);
         
         setMessages(prev => {
-          saveChatHistory(prev);
+          if (user) {
+            saveChatHistoryForUser(user.id, prev);
+          }
+          void syncConversationSnapshot(prev);
           return prev;
         });
 
@@ -479,22 +745,29 @@ ${weather.advice}
             if (actualMediaType === 'selfie') {
               generateSelfie();
             } else if (actualMediaType === 'dance') {
-              generateDance();
+              generateDance(undefined, userMessage.content);
             } else if (actualMediaType === 'workout') {
-              generateWorkout();
+              generateWorkout(undefined, userMessage.content);
             }
           }, 1500);
         }
       }
     } catch (error) {
       console.error('Chat error:', error);
-      setMessages(prev => [...prev, {
-        id: `msg_${Date.now()}_error`,
-        role: 'assistant',
-        content: '抱歉，能再说一次吗？',
-        timestamp: Date.now(),
-        type: 'text',
-      }]);
+      setMessages(prev => {
+        const nextMessages = [...prev, {
+          id: `msg_${Date.now()}_error`,
+          role: 'assistant' as const,
+          content: '抱歉，能再说一次吗？',
+          timestamp: Date.now(),
+          type: 'text' as const,
+        }];
+        if (user) {
+          saveChatHistoryForUser(user.id, nextMessages);
+        }
+        void syncConversationSnapshot(nextMessages);
+        return nextMessages;
+      });
     } finally {
       setIsLoading(false);
     }
@@ -503,15 +776,18 @@ ${weather.advice}
   // 重置
   const handleReset = () => {
     if (confirm('确定要重新选择角色吗？聊天记录将被清空。')) {
-      clearAllData();
+      if (user) {
+        markResumeSkipForUser(user.id);
+        clearConversationStateForUser(user.id);
+      }
       router.push('/');
     }
   };
 
-  if (!character) {
+  if (sessionLoading || !authenticated || !character || isRestoringConversation) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <p>加载中...</p>
+      <div className="min-h-screen flex items-center justify-center bg-pink-50">
+        <p className="text-sm text-gray-500">正在准备对话...</p>
       </div>
     );
   }
@@ -536,14 +812,17 @@ ${weather.advice}
           </div>
         </div>
         
-        <Button 
-          variant="ghost" 
-          size="icon" 
-          onClick={handleReset}
-          title="重新选择角色"
-        >
-          <RefreshCw className="w-5 h-5" />
-        </Button>
+        <div className="flex items-center gap-2">
+          <LogoutButton variant="ghost" size="sm" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleReset}
+            title="重新选择角色"
+          >
+            <RefreshCw className="w-5 h-5" />
+          </Button>
+        </div>
       </div>
 
       {/* 消息区域 */}

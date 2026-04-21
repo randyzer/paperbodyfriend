@@ -113,4 +113,6 @@ export const CHARACTERS = {
 export const STORAGE_KEYS = {
   SELECTED_CHARACTER: 'ai_boyfriend_character',
   CHAT_HISTORY: 'ai_boyfriend_chat_history',
+  CONVERSATION_ID: 'ai_boyfriend_conversation_id',
+  RESUME_SKIP: 'ai_boyfriend_resume_skip',
 };

@@ -1,10 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { ASRClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
+import { toRouteError } from '@/lib/ai/errors';
+import { transcribeAudio } from '@/lib/ai/services/speech-service';
+import { AuthError } from '@/server/auth/auth-service';
+import { requireAuthenticatedUser } from '@/server/auth/request-auth';
 
 export const runtime = 'nodejs';
 
 export async function POST(request: NextRequest) {
   try {
+    await requireAuthenticatedUser(request);
+
     const { audioBase64 } = await request.json();
     
     if (!audioBase64) {
@@ -14,17 +19,8 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 提取headers
-    const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
-
-    // 初始化ASR客户端
-    const config = new Config();
-    const client = new ASRClient(config, customHeaders);
-
-    // 识别语音
-    const result = await client.recognize({
-      uid: 'ai_boyfriend_' + Date.now(),
-      base64Data: audioBase64,
+    const result = await transcribeAudio({
+      audioBase64,
     });
 
     return NextResponse.json({
@@ -33,9 +29,13 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('ASR API error:', error);
-    return NextResponse.json(
-      { error: '语音识别失败，请稍后重试' },
-      { status: 500 }
-    );
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.userMessage, code: error.code },
+        { status: error.statusCode },
+      );
+    }
+    const routeError = toRouteError(error, '语音识别失败，请稍后重试');
+    return NextResponse.json(routeError.body, { status: routeError.status });
   }
 }

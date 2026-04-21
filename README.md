@@ -1,30 +1,72 @@
 # projects
 
-这是一个基于 [Next.js 16](https://nextjs.org) + [shadcn/ui](https://ui.shadcn.com) 的全栈应用项目，由扣子编程 CLI 创建。
+这是一个基于 [Next.js 16](https://nextjs.org) + [shadcn/ui](https://ui.shadcn.com) 的 AI 虚拟男友互动项目。
 
 ## 快速开始
 
 ### 启动开发服务器
 
 ```bash
-coze dev
+pnpm dev
 ```
 
-启动后，在浏览器中打开 [http://localhost:5000](http://localhost:5000) 查看应用。
+启动后，在浏览器中打开 [http://localhost:3000](http://localhost:3000) 查看应用。
 
 开发服务器支持热更新，修改代码后页面会自动刷新。
 
 ### 构建生产版本
 
 ```bash
-coze build
+pnpm build
 ```
 
 ### 启动生产服务器
 
 ```bash
-coze start
+pnpm start
 ```
+
+## 认证与数据库
+
+项目现已接入：
+
+- 邮箱注册 / 登录
+- 服务端会话认证（HttpOnly Cookie）
+- Neon Postgres 用户与会话存储
+- 登录后“继续上一次对话 / 重新选择角色”
+- 本地优先、数据库回退的会话恢复
+
+### 环境变量
+
+敏感信息只放在 `.env.local`，可参考 [`.env.example`](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/.worktrees/codex-auth-neon-local/.env.example)：
+
+```bash
+DATABASE_URL=
+DATABASE_URL_UNPOOLED=
+AUTH_SESSION_COOKIE_NAME=paperboyfriend_session
+AUTH_SESSION_TTL_DAYS=30
+```
+
+### 数据库命令
+
+```bash
+pnpm db:generate
+pnpm db:push
+```
+
+### 认证测试
+
+```bash
+pnpm test:auth
+pnpm test:conversation
+```
+
+### 登录后的会话恢复
+
+- 登录后会先检查当前账号在本机的本地对话缓存。
+- 本地没有可恢复记录时，会回退到 Neon 中查询该账号最近一次会话。
+- 如果存在可恢复会话，首页会提示“继续上一次对话”或“重新选择角色”。
+- 选择“重新选择角色”后，会跳过旧会话恢复，直到你真正开始一段新对话或主动继续旧会话。
 
 ## 项目结构
 
@@ -44,10 +86,8 @@ src/
 │   └── utils.ts            # cn() 等工具函数
 └── hooks/                   # 自定义 React Hooks（可选）
 
-server/
-├── index.ts                 # 自定义服务器入口
-├── tsconfig.json           # Server TypeScript 配置
-└── dist/                    # 编译输出目录（自动生成）
+src/
+└── server.ts                # 自定义服务器入口
 ```
 
 ## 核心开发规范

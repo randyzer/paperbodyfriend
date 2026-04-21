@@ -4,34 +4,31 @@ import './globals.css';
 
 export const metadata: Metadata = {
   title: {
-    default: '新应用 | 扣子编程',
-    template: '%s | 扣子编程',
+    default: 'AI 虚拟男友',
+    template: '%s | AI 虚拟男友',
   },
   description:
-    '扣子编程是一款一站式云端 Vibe Coding 开发平台。通过对话轻松构建智能体、工作流和网站，实现从创意到上线的无缝衔接。',
+    '一个基于 Next.js 构建的 AI 虚拟男友互动应用，支持开场白、聊天回复、语音、图片与视频生成。',
   keywords: [
-    '扣子编程',
-    'Coze Code',
-    'Vibe Coding',
-    'AI 编程',
-    '智能体搭建',
-    '工作流搭建',
-    '网站搭建',
-    '网站部署',
-    '全栈开发',
-    'AI 工程师',
+    'AI 虚拟男友',
+    'AI 聊天',
+    '角色互动',
+    '文字转语音',
+    '语音转文字',
+    'AI 图片生成',
+    'AI 视频生成',
+    'Next.js',
   ],
-  authors: [{ name: 'Coze Code Team', url: 'https://code.coze.cn' }],
-  generator: 'Coze Code',
+  authors: [{ name: 'Paper Boyfriend Project' }],
+  generator: 'Next.js',
   // icons: {
   //   icon: '',
   // },
   openGraph: {
-    title: '扣子编程 | 你的 AI 工程师已就位',
+    title: 'AI 虚拟男友',
     description:
-      '我正在使用扣子编程 Vibe Coding，让创意瞬间上线。告别拖拽，拥抱心流。',
-    url: 'https://code.coze.cn',
-    siteName: '扣子编程',
+      '支持开场白、聊天回复、语音、图片与视频生成的 AI 虚拟男友互动应用。',
+    siteName: 'AI 虚拟男友',
     locale: 'zh_CN',
     type: 'website',
     // images: [
@@ -43,13 +40,6 @@ export const metadata: Metadata = {
     //   },
     // ],
   },
-  // twitter: {
-  //   card: 'summary_large_image',
-  //   title: 'Coze Code | Your AI Engineer is Here',
-  //   description:
-  //     'Build and deploy full-stack applications through AI conversation. No env setup, just flow.',
-  //   // images: [''],
-  // },
   robots: {
     index: true,
     follow: true,
@@ -61,7 +51,7 @@ export default function RootLayout({
 }: Readonly<{
   children: React.ReactNode;
 }>) {
-  const isDev = process.env.COZE_PROJECT_ENV === 'DEV';
+  const isDev = process.env.NODE_ENV === 'development';
 
   return (
     <html lang="zh-CN" suppressHydrationWarning>

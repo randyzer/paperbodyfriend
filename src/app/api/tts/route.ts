@@ -1,17 +1,15 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { TTSClient, Config, HeaderUtils } from 'coze-coding-dev-sdk';
+import { toRouteError } from '@/lib/ai/errors';
+import { synthesizeCharacterSpeech } from '@/lib/ai/services/speech-service';
+import { AuthError } from '@/server/auth/auth-service';
+import { requireAuthenticatedUser } from '@/server/auth/request-auth';
 
 export const runtime = 'nodejs';
 
-// 角色对应的语音
-const CHARACTER_VOICES: Record<string, string> = {
-  uncle: 'zh_male_dayi_saturn_bigtts',      // 大叔 - Dayi (成熟男性)
-  sunshine: 'zh_male_m191_uranus_bigtts',   // 阳光男孩 - 云舟
-  straight_man: 'zh_male_taocheng_uranus_bigtts', // 直男 - 小天
-};
-
 export async function POST(request: NextRequest) {
   try {
+    await requireAuthenticatedUser(request);
+
     const { text, characterId } = await request.json();
     
     if (!text) {
@@ -21,34 +19,24 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // 根据角色选择语音
-    const speaker = characterId ? CHARACTER_VOICES[characterId] || 'zh_male_m191_uranus_bigtts' : 'zh_male_m191_uranus_bigtts';
-
-    // 提取headers
-    const customHeaders = HeaderUtils.extractForwardHeaders(request.headers);
-
-    // 初始化TTS客户端
-    const config = new Config();
-    const client = new TTSClient(config, customHeaders);
-
-    // 生成语音
-    const response = await client.synthesize({
-      uid: 'ai_boyfriend_' + Date.now(),
+    const response = await synthesizeCharacterSpeech({
       text,
-      speaker,
-      audioFormat: 'mp3',
-      sampleRate: 24000,
+      characterId,
     });
 
     return NextResponse.json({
-      audioUri: response.audioUri,
+      audioUri: response.audioUrl,
       audioSize: response.audioSize,
     });
   } catch (error) {
     console.error('TTS API error:', error);
-    return NextResponse.json(
-      { error: '语音合成失败，请稍后重试' },
-      { status: 500 }
-    );
+    if (error instanceof AuthError) {
+      return NextResponse.json(
+        { error: error.userMessage, code: error.code },
+        { status: error.statusCode },
+      );
+    }
+    const routeError = toRouteError(error, '语音合成失败，请稍后重试');
+    return NextResponse.json(routeError.body, { status: routeError.status });
   }
 }
