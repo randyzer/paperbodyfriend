@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import { Inspector } from 'react-dev-inspector';
+import CrispChat from '@/components/crisp-chat';
 import { Toaster } from '@/components/ui/sonner';
 import './globals.css';
 
@@ -59,6 +60,7 @@ export default function RootLayout({
       <body className="antialiased" suppressHydrationWarning>
         {isDev && <Inspector />}
         {children}
+        <CrispChat />
         <Toaster />
       </body>
     </html>

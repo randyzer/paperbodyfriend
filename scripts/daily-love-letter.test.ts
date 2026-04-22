@@ -149,6 +149,42 @@ async function main() {
   assert.match(batchErrors[0]?.message ?? '', /second@example\.com/);
   assert.match(String(batchErrors[0]?.error), /mail failed/);
 
+  const parallelStarts: string[] = [];
+  const parallelFinishes: string[] = [];
+  let activeJobs = 0;
+  let maxConcurrentJobs = 0;
+  const parallelService = createEmailService({
+    getFromEmail: () => '纸片人男友 <hello@example.com>',
+    getAppBaseUrl: () => 'https://paperboyfriend.example.com',
+    getDailyLoveLetterConcurrency: () => 2,
+    async listUsers() {
+      return [
+        { id: 'parallel_1', email: 'parallel-1@example.com', displayName: 'P1' },
+        { id: 'parallel_2', email: 'parallel-2@example.com', displayName: 'P2' },
+        { id: 'parallel_3', email: 'parallel-3@example.com', displayName: 'P3' },
+      ];
+    },
+    async findLatestCharacterId() {
+      return null;
+    },
+    async generateLoveLetter(input) {
+      parallelStarts.push(input.userName);
+      activeJobs += 1;
+      maxConcurrentJobs = Math.max(maxConcurrentJobs, activeJobs);
+      await new Promise(resolve => setTimeout(resolve, 30));
+      activeJobs -= 1;
+      parallelFinishes.push(input.userName);
+      return `给 ${input.userName} 的并发情话`;
+    },
+    async sendEmail() {},
+  });
+
+  await parallelService.sendDailyLoveLetterToAll();
+
+  assert.equal(maxConcurrentJobs, 2);
+  assert.deepEqual(parallelStarts.slice(0, 2), ['P1', 'P2']);
+  assert.equal(parallelFinishes.length, 3);
+
   await assert.rejects(
     sendWithResendClient(
       {

@@ -26,12 +26,15 @@ type DailyLoveLetterUser = {
   displayName: string | null;
 };
 
+const DEFAULT_DAILY_LOVE_LETTER_CONCURRENCY = 3;
+
 type EmailServiceDeps = {
   sendEmail(input: SendEmailInput): Promise<void>;
   generateLoveLetter(input: LoveLetterInput): Promise<string>;
   findLatestCharacterId(userId: string): Promise<string | null>;
   listUsers(): Promise<DailyLoveLetterUser[]>;
   logError(message: string, error: unknown): void;
+  getDailyLoveLetterConcurrency(): number;
   getFromEmail(): string;
   getAppBaseUrl(): string;
 };
@@ -121,6 +124,36 @@ async function defaultListUsers() {
     .from(users);
 }
 
+function sanitizeConcurrency(value: number) {
+  if (!Number.isFinite(value)) {
+    return DEFAULT_DAILY_LOVE_LETTER_CONCURRENCY;
+  }
+
+  return Math.max(1, Math.floor(value));
+}
+
+async function runWithConcurrencyLimit<T>(
+  items: T[],
+  concurrency: number,
+  worker: (item: T) => Promise<void>,
+) {
+  const queue = [...items];
+  const workerCount = Math.min(queue.length, sanitizeConcurrency(concurrency));
+
+  await Promise.all(
+    Array.from({ length: workerCount }, async () => {
+      while (queue.length > 0) {
+        const item = queue.shift();
+        if (!item) {
+          return;
+        }
+
+        await worker(item);
+      }
+    }),
+  );
+}
+
 export function createEmailService(
   overrides: Partial<EmailServiceDeps> = {},
 ) {
@@ -131,6 +164,9 @@ export function createEmailService(
       overrides.findLatestCharacterId ?? defaultFindLatestCharacterId,
     listUsers: overrides.listUsers ?? defaultListUsers,
     logError: overrides.logError ?? console.error,
+    getDailyLoveLetterConcurrency:
+      overrides.getDailyLoveLetterConcurrency ??
+      (() => DEFAULT_DAILY_LOVE_LETTER_CONCURRENCY),
     getFromEmail: overrides.getFromEmail ?? getResendFromEmail,
     getAppBaseUrl: overrides.getAppBaseUrl ?? getAppBaseUrl,
   };
@@ -180,18 +216,21 @@ export function createEmailService(
 
     async sendDailyLoveLetterToAll() {
       const users = await deps.listUsers();
-
-      for (const user of users) {
-        try {
-          await this.sendDailyLoveLetter({
-            userId: user.id,
-            userEmail: user.email,
-            userName: user.displayName?.trim() || user.email,
-          });
-        } catch (error) {
-          deps.logError(`给 ${user.email} 发情话失败：`, error);
-        }
-      }
+      await runWithConcurrencyLimit(
+        users,
+        deps.getDailyLoveLetterConcurrency(),
+        async user => {
+          try {
+            await this.sendDailyLoveLetter({
+              userId: user.id,
+              userEmail: user.email,
+              userName: user.displayName?.trim() || user.email,
+            });
+          } catch (error) {
+            deps.logError(`给 ${user.email} 发情话失败：`, error);
+          }
+        },
+      );
     },
   };
 }
