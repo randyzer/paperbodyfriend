@@ -58,9 +58,12 @@ export default function RootLayout({
 
   return (
     <html lang="zh-CN" suppressHydrationWarning>
-      <body className="antialiased" suppressHydrationWarning>
+      <body
+        className="flex min-h-screen flex-col antialiased"
+        suppressHydrationWarning
+      >
         {isDev && <Inspector />}
-        {children}
+        <main className="flex-1">{children}</main>
         <footer className="border-t border-pink-100 bg-white/80 px-4 py-5 text-sm text-gray-500">
           <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
             <p>Paper Boyfriend</p>
