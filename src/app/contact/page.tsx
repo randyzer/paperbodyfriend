@@ -43,10 +43,15 @@ export default function ContactPage() {
               <CardTitle className="text-xl text-gray-800">即时聊天</CardTitle>
             </CardHeader>
             <CardContent className="space-y-3 text-sm text-gray-600">
-              <p>Discord 社群入口预留中，后续会在这里开放。</p>
-              <div className="rounded-2xl border border-dashed border-purple-200 bg-purple-50 px-4 py-3 text-purple-500">
-                Discord 占位，敬请期待
-              </div>
+              <p>欢迎加入我们的 Discord 社群，和我们直接交流反馈。</p>
+              <a
+                href="https://discord.gg/9vTtjzt2"
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex rounded-full bg-purple-500 px-4 py-2 font-medium text-white transition-colors hover:bg-purple-600"
+              >
+                加入 Discord
+              </a>
             </CardContent>
           </Card>
         </div>
