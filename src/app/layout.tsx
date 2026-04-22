@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 import { Inspector } from 'react-dev-inspector';
 import CrispChat from '@/components/crisp-chat';
 import { Toaster } from '@/components/ui/sonner';
@@ -60,6 +61,17 @@ export default function RootLayout({
       <body className="antialiased" suppressHydrationWarning>
         {isDev && <Inspector />}
         {children}
+        <footer className="border-t border-pink-100 bg-white/80 px-4 py-5 text-sm text-gray-500">
+          <div className="mx-auto flex max-w-5xl items-center justify-between gap-4">
+            <p>Paper Boyfriend</p>
+            <Link
+              href="/contact"
+              className="font-medium text-pink-500 transition-colors hover:text-pink-600"
+            >
+              联系我们
+            </Link>
+          </div>
+        </footer>
         <CrispChat />
         <Toaster />
       </body>
