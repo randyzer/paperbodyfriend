@@ -264,14 +264,14 @@ export default function HomePage() {
         : '正在加载历史对话...';
 
     return (
-      <div className="flex min-h-screen items-center justify-center bg-pink-50">
+      <div className="flex h-full min-h-full items-center justify-center bg-pink-50">
         <p className="text-sm text-gray-500">{loadingMessage}</p>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-pink-50 to-purple-50">
+    <div className="h-full min-h-full bg-gradient-to-b from-pink-50 to-purple-50">
       <ResumeDialog
         open={Boolean(resumeCandidate)}
         characterName={resumeCandidate?.characterName ?? ''}
