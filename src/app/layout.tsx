@@ -1,5 +1,6 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
+import Script from 'next/script';
 import { Inspector } from 'react-dev-inspector';
 import CrispChat from '@/components/crisp-chat';
 import { Toaster } from '@/components/ui/sonner';
@@ -58,6 +59,16 @@ export default function RootLayout({
 
   return (
     <html lang="zh-CN" suppressHydrationWarning>
+      <head>
+        <Script
+          async
+          src="https://plausible.io/js/pa-5kVPMU-6YhIFhd8eqHco8.js"
+          strategy="afterInteractive"
+        />
+        <Script id="plausible-init" strategy="afterInteractive">
+          {`window.plausible=window.plausible||function(){(plausible.q=plausible.q||[]).push(arguments)},plausible.init=plausible.init||function(i){plausible.o=i||{}};plausible.init();`}
+        </Script>
+      </head>
       <body
         className="flex min-h-screen flex-col antialiased"
         suppressHydrationWarning
