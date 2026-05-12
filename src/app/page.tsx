@@ -1,9 +1,11 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 
 import { UserAccountMenu } from '@/components/auth/user-account-menu';
+import { PricingTable } from '@/components/home/pricing-table';
 import { ResumeDialog } from '@/components/home/resume-dialog';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
@@ -12,6 +14,14 @@ import { useAuthSession } from '@/hooks/use-auth-session';
 import { CHARACTERS } from '@/lib/config';
 import { fetchWithTimeout } from '@/lib/fetch-with-timeout';
 import {
+  getTierBadgeClassName,
+  getTierDescription,
+  getTierLabel,
+  resolveAccessTier,
+  type BillingStatusSnapshot,
+} from '@/lib/paid-access';
+import {
+  clearAnonymousConversationState,
   clearResumeSkipForUser,
   clearConversationStateForUser,
   getChatHistoryForUser,
@@ -19,6 +29,9 @@ import {
   getSelectedCharacterForUser,
   markResumeSkipForUser,
   migrateLegacyStorageToUser,
+  saveAnonymousChatHistory,
+  saveAnonymousConversationId,
+  saveAnonymousSelectedCharacter,
   saveChatHistoryForUser,
   saveConversationIdForUser,
   saveSelectedCharacterForUser,
@@ -50,24 +63,38 @@ type ConversationDetailResponse = {
   messages: ChatMessage[];
 };
 
+type BillingStatusResponse = {
+  active: boolean;
+  currentPeriodEnd: string | null;
+};
+
 function getCharacterById(characterId: string) {
   return CHARACTERS[characterId as keyof typeof CHARACTERS] ?? null;
 }
 
+function createAnonymousConversationId() {
+  return `anon_${crypto.randomUUID()}`;
+}
+
 export default function HomePage() {
   const router = useRouter();
-  const { isLoading: sessionLoading, authenticated, user } = useAuthSession({
-    required: true,
-  });
+  const { isLoading: sessionLoading, authenticated, user } = useAuthSession();
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
   const [resumeCandidate, setResumeCandidate] = useState<ResumeCandidate | null>(null);
   const [isCheckingResume, setIsCheckingResume] = useState(true);
   const [resumeDecisionLoading, setResumeDecisionLoading] = useState(false);
+  const [billingStatus, setBillingStatus] = useState<BillingStatusSnapshot | null>(null);
 
   useEffect(() => {
+    if (sessionLoading) {
+      return;
+    }
+
     if (!authenticated || !user) {
+      setResumeCandidate(null);
+      setIsCheckingResume(false);
       return;
     }
 
@@ -160,7 +187,56 @@ export default function HomePage() {
     return () => {
       active = false;
     };
-  }, [authenticated, user]);
+  }, [authenticated, sessionLoading, user]);
+
+  useEffect(() => {
+    if (sessionLoading) {
+      return;
+    }
+
+    if (!authenticated || !user) {
+      setBillingStatus(null);
+      return;
+    }
+
+    let active = true;
+
+    async function loadBillingStatus() {
+      try {
+        const response = await fetchWithTimeout('/api/billing/status', {
+          cache: 'no-store',
+          timeoutMs: 5_000,
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to load billing status');
+        }
+
+        const data = (await response.json()) as BillingStatusResponse;
+        if (!active) {
+          return;
+        }
+
+        setBillingStatus({
+          active: data.active,
+          currentPeriodEnd: data.currentPeriodEnd,
+        });
+      } catch {
+        if (active) {
+          setBillingStatus({
+            active: false,
+            currentPeriodEnd: null,
+          });
+        }
+      }
+    }
+
+    void loadBillingStatus();
+
+    return () => {
+      active = false;
+    };
+  }, [authenticated, sessionLoading, user]);
 
   const handleSelect = (id: string) => {
     setSelectedId(id);
@@ -168,12 +244,23 @@ export default function HomePage() {
   };
 
   const handleConfirm = async () => {
-    if (!selectedId || !user) return;
+    if (!selectedId) return;
 
     setIsLoading(true);
     setActionError(null);
 
     try {
+      if (!user) {
+        const anonymousConversationId = createAnonymousConversationId();
+
+        clearAnonymousConversationState();
+        saveAnonymousSelectedCharacter(selectedId);
+        saveAnonymousConversationId(anonymousConversationId);
+        saveAnonymousChatHistory([]);
+        router.push('/chat');
+        return;
+      }
+
       const response = await fetch('/api/conversations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -257,9 +344,9 @@ export default function HomePage() {
     setResumeDecisionLoading(false);
   };
 
-  if (sessionLoading || !authenticated || isCheckingResume) {
+  if (sessionLoading || (authenticated && isCheckingResume)) {
     const loadingMessage =
-      sessionLoading || !authenticated
+      sessionLoading
         ? '正在检查登录状态...'
         : '正在加载历史对话...';
 
@@ -270,8 +357,13 @@ export default function HomePage() {
     );
   }
 
+  const currentTier = resolveAccessTier({
+    authenticated,
+    billingStatus,
+  });
+
   return (
-    <div className="h-full min-h-full bg-gradient-to-b from-pink-50 to-purple-50">
+    <div id="top" className="h-full min-h-full bg-gradient-to-b from-pink-50 to-purple-50">
       <ResumeDialog
         open={Boolean(resumeCandidate)}
         characterName={resumeCandidate?.characterName ?? ''}
@@ -297,6 +389,40 @@ export default function HomePage() {
         <div className="mb-12 text-center">
           <h1 className="mb-4 text-4xl font-bold text-gray-800">AI 虚拟男友</h1>
           <p className="text-lg text-gray-600">找一个懂你、疼你、呵护你的另一半</p>
+        </div>
+
+        <div className="mb-8 rounded-3xl border border-pink-100 bg-white/90 p-5 shadow-sm">
+          <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+            <div className="space-y-2">
+              <div className="flex items-center gap-2">
+                <Badge className={getTierBadgeClassName(currentTier)}>
+                  {getTierLabel(currentTier)}
+                </Badge>
+                {authenticated && currentTier === 'free' ? (
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/pricing">升级会员</Link>
+                  </Button>
+                ) : null}
+                {authenticated && currentTier === 'paid' ? (
+                  <Button asChild size="sm" variant="outline">
+                    <Link href="/pricing">查看订阅</Link>
+                  </Button>
+                ) : null}
+              </div>
+              <p className="text-sm text-gray-600">{getTierDescription(currentTier)}</p>
+            </div>
+
+            {!authenticated ? (
+              <div className="flex flex-wrap gap-2">
+                <Button asChild className="bg-pink-500 hover:bg-pink-600">
+                  <Link href="/register">注册后继续</Link>
+                </Button>
+                <Button asChild variant="outline">
+                  <Link href="/login">已有账号，去登录</Link>
+                </Button>
+              </div>
+            ) : null}
+          </div>
         </div>
 
         <div className="mb-8 rounded-2xl bg-white p-6 shadow-lg">
@@ -364,6 +490,10 @@ export default function HomePage() {
           >
             {isLoading ? '正在进入...' : '确认选择'}
           </Button>
+        </div>
+
+        <div className="mt-12">
+          <PricingTable currentTier={currentTier} />
         </div>
 
         <div className="mt-12 text-center text-sm text-gray-400">

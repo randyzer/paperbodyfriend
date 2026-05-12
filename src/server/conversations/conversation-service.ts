@@ -19,6 +19,7 @@ export type ConversationRecord = {
   characterId: string;
   title: string | null;
   lastMessagePreview: string | null;
+  roundTripCount: number;
   lastMessageAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -54,6 +55,19 @@ export type ConversationRepository = {
     lastMessagePreview: string | null;
     lastMessageAt: Date;
     updatedAt: Date;
+  }): Promise<void>;
+  reserveRoundTrip(input: {
+    userId: string;
+    conversationId: string;
+    maxRoundTrips: number;
+  }): Promise<
+    | { status: 'reserved'; roundTripCount: number }
+    | { status: 'limit_reached' }
+    | { status: 'not_found' }
+  >;
+  releaseRoundTrip(input: {
+    userId: string;
+    conversationId: string;
   }): Promise<void>;
 };
 
@@ -106,6 +120,37 @@ export function createConversationService(options: CreateConversationServiceOpti
       };
     },
 
+    async getCurrentRoundTripCount(input: {
+      userId: string;
+      conversationId: string;
+    }) {
+      const conversation = await options.repository.findConversationById(
+        input.userId,
+        input.conversationId,
+      );
+
+      if (!conversation) {
+        return 0;
+      }
+
+      return conversation.roundTripCount;
+    },
+
+    async reserveConversationRoundTrip(input: {
+      userId: string;
+      conversationId: string;
+      maxRoundTrips: number;
+    }) {
+      return options.repository.reserveRoundTrip(input);
+    },
+
+    async releaseConversationRoundTrip(input: {
+      userId: string;
+      conversationId: string;
+    }) {
+      await options.repository.releaseRoundTrip(input);
+    },
+
     async createConversation(input: { userId: string; characterId: string }) {
       const createdAt = now();
 
@@ -115,6 +160,7 @@ export function createConversationService(options: CreateConversationServiceOpti
         characterId: input.characterId,
         title: null,
         lastMessagePreview: null,
+        roundTripCount: 0,
         lastMessageAt: createdAt,
         createdAt,
         updatedAt: createdAt,

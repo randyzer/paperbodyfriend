@@ -50,10 +50,13 @@ async function main() {
     clearResumeSkipForUser,
     migrateLegacyStorageToUser,
     clearConversationStateForUser,
-    saveSelectedCharacter,
-    getSelectedCharacter,
-    saveChatHistory,
-    getChatHistory,
+    saveAnonymousSelectedCharacter,
+    getAnonymousSelectedCharacter,
+    saveAnonymousChatHistory,
+    getAnonymousChatHistory,
+    saveAnonymousConversationId,
+    getAnonymousConversationId,
+    clearAnonymousConversationState,
     clearAllData,
   } = await import('../src/lib/storage');
   const { STORAGE_KEYS } = await import('../src/lib/config');
@@ -122,13 +125,34 @@ async function main() {
   assert.equal(localStorage.getItem(STORAGE_KEYS.CONVERSATION_ID), null);
   assert.equal(localStorage.getItem(STORAGE_KEYS.CHAT_HISTORY), null);
 
-  saveSelectedCharacter('uncle');
-  saveChatHistory([oldMessage]);
-  assert.equal(getSelectedCharacter(), 'uncle');
-  assert.deepEqual(getChatHistory(), [oldMessage]);
+  saveAnonymousSelectedCharacter('uncle');
+  saveAnonymousConversationId('anon_conversation_1');
+  saveAnonymousChatHistory([oldMessage]);
+  assert.equal(getAnonymousSelectedCharacter(), 'uncle');
+  assert.equal(getAnonymousConversationId(), 'anon_conversation_1');
+  assert.deepEqual(getAnonymousChatHistory(), [oldMessage]);
 
-  localStorage.setItem(STORAGE_KEYS.CHAT_HISTORY, '{broken json');
-  assert.deepEqual(getChatHistory(), []);
+  localStorage.setItem(STORAGE_KEYS.ANON_CHAT_HISTORY, '{broken json');
+  assert.deepEqual(getAnonymousChatHistory(), []);
+
+  saveAnonymousSelectedCharacter('sunshine');
+  saveAnonymousConversationId('anon_conversation_2');
+  saveAnonymousChatHistory([
+    {
+      id: 'anon_message_2',
+      role: 'assistant',
+      content: 'anonymous session 2',
+      timestamp: 1713609000000,
+    },
+  ]);
+  assert.equal(getAnonymousSelectedCharacter(), 'sunshine');
+  assert.equal(getAnonymousConversationId(), 'anon_conversation_2');
+  assert.equal(getAnonymousChatHistory()[0]?.content, 'anonymous session 2');
+
+  clearAnonymousConversationState();
+  assert.equal(getAnonymousSelectedCharacter(), null);
+  assert.equal(getAnonymousConversationId(), null);
+  assert.deepEqual(getAnonymousChatHistory(), []);
 
   saveSelectedCharacterForUser('user_2', 'sunshine');
   saveConversationIdForUser('user_2', 'conversation_2');
@@ -164,8 +188,9 @@ async function main() {
   assert.equal(getSelectedCharacterForUser('user_2'), null);
   assert.equal(getConversationIdForUser('user_2'), null);
   assert.equal(getChatHistoryForUser('user_2').length, 0);
-  assert.equal(getSelectedCharacter(), null);
-  assert.deepEqual(getChatHistory(), []);
+  assert.equal(getAnonymousSelectedCharacter(), null);
+  assert.equal(getAnonymousConversationId(), null);
+  assert.deepEqual(getAnonymousChatHistory(), []);
 
   console.log('conversation storage test passed.');
 }

@@ -50,3 +50,20 @@ export async function requireAuthenticatedUser(request: Request) {
 
   return session.user;
 }
+
+export async function getOptionalAuthenticatedUser(request: Request) {
+  const token = readCookieValue(request, getSessionCookieName());
+  if (!token) {
+    return null;
+  }
+
+  try {
+    return await requireAuthenticatedUser(request);
+  } catch (error) {
+    if (error instanceof AuthError) {
+      return null;
+    }
+
+    throw error;
+  }
+}

@@ -115,4 +115,7 @@ export const STORAGE_KEYS = {
   CHAT_HISTORY: 'ai_boyfriend_chat_history',
   CONVERSATION_ID: 'ai_boyfriend_conversation_id',
   RESUME_SKIP: 'ai_boyfriend_resume_skip',
+  ANON_SELECTED_CHARACTER: 'ai_boyfriend_anon_character',
+  ANON_CHAT_HISTORY: 'ai_boyfriend_anon_chat_history',
+  ANON_CONVERSATION_ID: 'ai_boyfriend_anon_conversation_id',
 };

@@ -1,4 +1,4 @@
-import { and, asc, desc, eq, isNull } from 'drizzle-orm';
+import { and, asc, desc, eq, isNull, lt, sql } from 'drizzle-orm';
 
 import type {
   ConversationMessageRecord,
@@ -94,6 +94,77 @@ export function createConversationRepository(database = db) {
           updatedAt: input.updatedAt,
         })
         .where(eq(conversations.id, input.conversationId));
+    },
+
+    async reserveRoundTrip(input: {
+      userId: string;
+      conversationId: string;
+      maxRoundTrips: number;
+    }) {
+      const [reservedConversation] = await database
+        .update(conversations)
+        .set({
+          roundTripCount: sql`${conversations.roundTripCount} + 1`,
+        })
+        .where(
+          and(
+            eq(conversations.id, input.conversationId),
+            eq(conversations.userId, input.userId),
+            isNull(conversations.archivedAt),
+            lt(conversations.roundTripCount, input.maxRoundTrips),
+          ),
+        )
+        .returning({
+          roundTripCount: conversations.roundTripCount,
+        });
+
+      if (reservedConversation) {
+        return {
+          status: 'reserved' as const,
+          roundTripCount: reservedConversation.roundTripCount,
+        };
+      }
+
+      const [conversation] = await database
+        .select({
+          id: conversations.id,
+        })
+        .from(conversations)
+        .where(
+          and(
+            eq(conversations.id, input.conversationId),
+            eq(conversations.userId, input.userId),
+            isNull(conversations.archivedAt),
+          ),
+        )
+        .limit(1);
+
+      if (!conversation) {
+        return {
+          status: 'not_found' as const,
+        };
+      }
+
+      return {
+        status: 'limit_reached' as const,
+      };
+    },
+
+    async releaseRoundTrip(input: {
+      userId: string;
+      conversationId: string;
+    }) {
+      await database
+        .update(conversations)
+        .set({
+          roundTripCount: sql`greatest(${conversations.roundTripCount} - 1, 0)`,
+        })
+        .where(
+          and(
+            eq(conversations.id, input.conversationId),
+            eq(conversations.userId, input.userId),
+          ),
+        );
     },
   };
 }

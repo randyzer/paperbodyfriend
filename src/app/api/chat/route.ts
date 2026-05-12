@@ -3,7 +3,10 @@ import { toRouteError } from '@/lib/ai/errors';
 import { detectMediaIntent } from '@/lib/ai/media-intent';
 import { generateGameText } from '@/lib/ai/services/game-ai-service';
 import { AuthError } from '@/server/auth/auth-service';
-import { requireAuthenticatedUser } from '@/server/auth/request-auth';
+import { buildAnonChatRoundsCookie, readAnonChatRoundsCookie } from '@/server/access/anon-chat-cookie';
+import { ChatAccessError } from '@/server/access/chat-access-errors';
+import { createChatAccessService } from '@/server/access/chat-access-service';
+import { getOptionalAuthenticatedUser } from '@/server/auth/request-auth';
 
 export const runtime = 'nodejs';
 
@@ -15,21 +18,154 @@ const MENTAL_HEALTH_KEYWORDS = [
   '活不下去了', '没有希望', '绝望'
 ];
 
-export async function POST(request: NextRequest) {
-  try {
-    await requireAuthenticatedUser(request);
+type RouteMessage = {
+  role: 'user' | 'assistant';
+  content: string;
+};
 
-    const { messages, characterPrompt, messageCount = 0 } = await request.json();
-    
-    if (!messages || !characterPrompt) {
+const testGlobals = globalThis as typeof globalThis & {
+  __paperBoyfriendTestGenerateGameText?: (input: {
+    capability: 'game_start' | 'game_chat';
+    messages: RouteMessage[];
+    systemPrompt: string;
+  }) => Promise<{ text: string }>;
+};
+
+async function createRouteChatAccessService() {
+  return createChatAccessService({
+    async getBillingStatus(userId) {
+      if (
+        process.env.AUTH_TEST_BYPASS === 'true' &&
+        userId === 'test-user'
+      ) {
+        return { active: false };
+      }
+
+      const { getCreemService } = await import('@/server/creem/default-creem-service');
+      return getCreemService().getBillingStatus(userId);
+    },
+  });
+}
+
+function getLastUserMessage(messages: RouteMessage[]) {
+  return messages.filter(message => message.role === 'user').pop() ?? null;
+}
+
+function shouldCountRoundTrip(messages: RouteMessage[], lastUserMessage: RouteMessage | null) {
+  if (!lastUserMessage) {
+    return false;
+  }
+
+  return !(
+    messages.length <= 1 &&
+    lastUserMessage.content === '打招呼'
+  );
+}
+
+async function generateRouteGameText(input: {
+  capability: 'game_start' | 'game_chat';
+  messages: RouteMessage[];
+  systemPrompt: string;
+}) {
+  if (
+    process.env.AUTH_TEST_BYPASS === 'true' &&
+    testGlobals.__paperBoyfriendTestGenerateGameText
+  ) {
+    return testGlobals.__paperBoyfriendTestGenerateGameText(input);
+  }
+
+  return generateGameText(input);
+}
+
+export async function POST(request: NextRequest) {
+  let reservedConversationRoundTrip:
+    | {
+        userId: string;
+        conversationId: string;
+      }
+    | null = null;
+
+  try {
+    const {
+      messages,
+      characterPrompt,
+      messageCount = 0,
+      conversationId,
+    } = await request.json();
+
+    if (!Array.isArray(messages) || !characterPrompt) {
       return NextResponse.json(
         { error: '缺少必要参数' },
         { status: 400 }
       );
     }
 
+    if (
+      typeof conversationId !== 'string' ||
+      conversationId.trim().length === 0
+    ) {
+      return NextResponse.json(
+        { error: 'conversationId is required' },
+        { status: 400 },
+      );
+    }
+
+    const normalizedConversationId = conversationId.trim();
+
+    const user = await getOptionalAuthenticatedUser(request);
+    const routeMessages = messages as RouteMessage[];
+    const lastUserMessage = getLastUserMessage(routeMessages);
+    const countedRoundTrip = shouldCountRoundTrip(routeMessages, lastUserMessage);
+
+    const chatAccessService = await createRouteChatAccessService();
+    const anonCookieState = !user
+      ? readAnonChatRoundsCookie(
+          request.headers.get('cookie'),
+          normalizedConversationId,
+        )
+      : null;
+
+    if (anonCookieState?.isTampered) {
+      throw new ChatAccessError('ANON_CHAT_COOKIE_INVALID');
+    }
+
+    if (countedRoundTrip) {
+      if (!user) {
+        await chatAccessService.assertChatAllowed({
+          userId: null,
+          currentRoundTripCount: anonCookieState?.roundCount ?? 0,
+        });
+      } else {
+        const access = await chatAccessService.resolveChatAccess({
+          userId: user.id,
+        });
+        if (access.tier === 'free') {
+          const { getConversationService } = await import(
+            '@/server/conversations/default-conversation-service'
+          );
+          const reservation = await getConversationService().reserveConversationRoundTrip({
+            userId: user.id,
+            conversationId: normalizedConversationId,
+            maxRoundTrips: access.maxRoundTrips,
+          });
+
+          if (reservation.status === 'not_found') {
+            throw new Error('Conversation not found');
+          }
+
+          if (reservation.status === 'limit_reached') {
+            throw new ChatAccessError('FREE_CHAT_LIMIT_REACHED');
+          }
+
+          reservedConversationRoundTrip = {
+            userId: user.id,
+            conversationId: normalizedConversationId,
+          };
+        }
+      }
+    }
+
     // 检查是否有心理健康相关内容
-    const lastUserMessage = messages.filter((m: { role: string }) => m.role === 'user').pop();
     const hasMentalHealthKeywords = lastUserMessage && 
       MENTAL_HEALTH_KEYWORDS.some(keyword => lastUserMessage.content?.includes(keyword));
 
@@ -97,12 +233,12 @@ export async function POST(request: NextRequest) {
       }
     }
 
-    const result = await generateGameText({
+    const result = await generateRouteGameText({
       capability:
-        messages.length <= 1 && lastUserMessage?.content === '打招呼'
+        routeMessages.length <= 1 && lastUserMessage?.content === '打招呼'
           ? 'game_start'
           : 'game_chat',
-      messages: messages.map((msg: { role: string; content: string }) => ({
+      messages: routeMessages.map(msg => ({
         role: msg.role as 'user' | 'assistant',
         content: msg.content,
       })),
@@ -114,13 +250,52 @@ export async function POST(request: NextRequest) {
       ? `${result.text}[MEDIA:${finalMedia}]`
       : result.text;
 
+    const headers = new Headers({
+      'Content-Type': 'text/plain;charset=utf-8',
+    });
+
+    if (!user && countedRoundTrip) {
+      headers.set(
+        'Set-Cookie',
+        buildAnonChatRoundsCookie(
+          (anonCookieState?.roundCount ?? 0) + 1,
+          normalizedConversationId,
+        ),
+      );
+    }
+
+    reservedConversationRoundTrip = null;
+
     return new Response(responseText, {
-      headers: {
-        'Content-Type': 'text/plain;charset=utf-8',
-      },
+      headers,
     });
   } catch (error) {
     console.error('Chat API error:', error);
+    if (reservedConversationRoundTrip) {
+      try {
+        const { getConversationService } = await import(
+          '@/server/conversations/default-conversation-service'
+        );
+        await getConversationService().releaseConversationRoundTrip(
+          reservedConversationRoundTrip,
+        );
+      } catch (rollbackError) {
+        console.error('Chat round-trip rollback error:', rollbackError);
+      }
+    }
+
+    if (error instanceof ChatAccessError) {
+      return NextResponse.json(
+        { error: error.userMessage, code: error.code },
+        { status: error.statusCode },
+      );
+    }
+    if (error instanceof Error && error.message === 'Conversation not found') {
+      return NextResponse.json(
+        { error: 'Conversation not found' },
+        { status: 404 },
+      );
+    }
     if (error instanceof AuthError) {
       return NextResponse.json(
         { error: error.userMessage, code: error.code },

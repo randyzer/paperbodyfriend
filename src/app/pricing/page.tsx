@@ -7,6 +7,11 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { useAuthSession } from '@/hooks/use-auth-session';
+import {
+  ANONYMOUS_MAX_ROUND_TRIPS,
+  FREE_MAX_ROUND_TRIPS,
+  MEMBER_PRICE_LABEL,
+} from '@/lib/paid-access';
 
 type BillingStatus = {
   active: boolean;
@@ -164,10 +169,10 @@ export default function PricingPage() {
     <div className="bg-gradient-to-b from-pink-50 to-purple-50 px-4 py-12">
       <div className="mx-auto max-w-3xl space-y-6">
         <div className="space-y-2 text-center">
-          <p className="text-sm font-medium text-pink-500">Creem Checkout</p>
+          <p className="text-sm font-medium text-pink-500">Paper Boyfriend Membership</p>
           <h1 className="text-3xl font-semibold text-gray-900">开通会员订阅</h1>
           <p className="text-sm text-gray-500">
-            使用 Creem 测试模式完成支付闭环，真正生效以 webhook 同步结果为准。
+            月付 {MEMBER_PRICE_LABEL}，开通后无限次使用。当前仍以 webhook 同步结果为准。
           </p>
         </div>
 
@@ -186,19 +191,34 @@ export default function PricingPage() {
               </Badge>
             </div>
             <p className="text-sm text-gray-500">
-              当前版本先按单一产品接入，后续再扩展套餐和客户中心。
+              免费用户每次游戏仅可对话 {FREE_MAX_ROUND_TRIPS} 轮，会员用户无限制。
             </p>
           </CardHeader>
 
           <CardContent className="space-y-5">
             <div className="rounded-2xl border border-pink-100 bg-pink-50/70 p-4 text-sm text-gray-600">
-              <p>你将获得：</p>
+              <p className="font-medium text-gray-800">你将获得：</p>
               <ul className="mt-2 list-disc space-y-1 pl-5">
+                <li>无限次对话，不再受 {FREE_MAX_ROUND_TRIPS} 轮限制</li>
                 <li>完整 Creem Checkout 支付链路</li>
-                <li>站内订阅状态查询</li>
-                <li>支付成功页签名校验</li>
-                <li>Webhook 同步订阅状态</li>
+                <li>站内订阅状态实时查询</li>
+                <li>支付成功页签名校验与 webhook 状态同步</li>
               </ul>
+            </div>
+
+            <div className="grid gap-3 rounded-2xl border border-pink-100 bg-white p-4 text-sm text-gray-600 md:grid-cols-3">
+              <div>
+                <p className="font-medium text-gray-800">游客试玩</p>
+                <p className="mt-1">{ANONYMOUS_MAX_ROUND_TRIPS} 轮 / 每次游戏</p>
+              </div>
+              <div>
+                <p className="font-medium text-gray-800">免费用户</p>
+                <p className="mt-1">{FREE_MAX_ROUND_TRIPS} 轮 / 每次游戏</p>
+              </div>
+              <div>
+                <p className="font-medium text-gray-800">会员用户</p>
+                <p className="mt-1">{MEMBER_PRICE_LABEL} · 无限次使用</p>
+              </div>
             </div>
 
             {currentPeriodEndLabel ? (

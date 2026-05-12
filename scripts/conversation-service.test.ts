@@ -6,6 +6,7 @@ type StoredConversation = {
   characterId: string;
   title: string | null;
   lastMessagePreview: string | null;
+  roundTripCount: number;
   lastMessageAt: Date;
   createdAt: Date;
   updatedAt: Date;
@@ -59,6 +60,7 @@ async function main() {
           characterId: input.characterId,
           title: input.title,
           lastMessagePreview: input.lastMessagePreview,
+          roundTripCount: input.roundTripCount,
           lastMessageAt: input.lastMessageAt,
           createdAt: input.createdAt,
           updatedAt: input.updatedAt,
@@ -115,6 +117,30 @@ async function main() {
         conversation.lastMessageAt = input.lastMessageAt;
         conversation.updatedAt = input.updatedAt;
       },
+      async reserveRoundTrip(input) {
+        const conversation = conversations.get(input.conversationId);
+        if (!conversation || conversation.userId !== input.userId) {
+          return { status: 'not_found' as const };
+        }
+
+        if (conversation.roundTripCount >= input.maxRoundTrips) {
+          return { status: 'limit_reached' as const };
+        }
+
+        conversation.roundTripCount += 1;
+        return {
+          status: 'reserved' as const,
+          roundTripCount: conversation.roundTripCount,
+        };
+      },
+      async releaseRoundTrip(input) {
+        const conversation = conversations.get(input.conversationId);
+        if (!conversation || conversation.userId !== input.userId) {
+          return;
+        }
+
+        conversation.roundTripCount = Math.max(0, conversation.roundTripCount - 1);
+      },
     },
   });
 
@@ -124,6 +150,7 @@ async function main() {
   });
 
   assert.equal(createdConversation.characterId, 'uncle');
+  assert.equal(createdConversation.roundTripCount, 0);
 
   const syncResult = await service.syncConversationMessages({
     userId: 'user_1',
@@ -227,6 +254,70 @@ async function main() {
   assert.equal(detailWithMedia?.messages[0]?.videoStatus, undefined);
   assert.equal(detailWithMedia?.messages[0]?.pendingCaption, undefined);
   assert.equal(detailWithMedia?.messages[0]?.mediaKind, undefined);
+
+  const trustedRoundTripCount = await service.getCurrentRoundTripCount({
+    userId: 'user_1',
+    conversationId: createdConversation.id,
+  });
+  assert.equal(
+    trustedRoundTripCount,
+    0,
+    'message sync should not change the trusted round-trip count ledger',
+  );
+
+  const reservedRoundTrip = await service.reserveConversationRoundTrip({
+    userId: 'user_1',
+    conversationId: createdConversation.id,
+    maxRoundTrips: 2,
+  });
+  assert.deepEqual(reservedRoundTrip, {
+    status: 'reserved',
+    roundTripCount: 1,
+  });
+
+  const reservedRoundTripAgain = await service.reserveConversationRoundTrip({
+    userId: 'user_1',
+    conversationId: createdConversation.id,
+    maxRoundTrips: 2,
+  });
+  assert.deepEqual(reservedRoundTripAgain, {
+    status: 'reserved',
+    roundTripCount: 2,
+  });
+
+  const blockedReservation = await service.reserveConversationRoundTrip({
+    userId: 'user_1',
+    conversationId: createdConversation.id,
+    maxRoundTrips: 2,
+  });
+  assert.deepEqual(blockedReservation, {
+    status: 'limit_reached',
+  });
+
+  await service.releaseConversationRoundTrip({
+    userId: 'user_1',
+    conversationId: createdConversation.id,
+  });
+
+  const roundTripCountAfterRelease = await service.getCurrentRoundTripCount({
+    userId: 'user_1',
+    conversationId: createdConversation.id,
+  });
+  assert.equal(roundTripCountAfterRelease, 1);
+
+  const freshConversation = await service.createConversation({
+    userId: 'user_1',
+    characterId: 'uncle',
+  });
+  const freshConversationRoundTripCount = await service.getCurrentRoundTripCount({
+    userId: 'user_1',
+    conversationId: freshConversation.id,
+  });
+  assert.equal(
+    freshConversationRoundTripCount,
+    0,
+    'a new conversation should start from zero instead of inheriting prior sessions',
+  );
 
   const dedupConversation = await service.createConversation({
     userId: 'user_1',

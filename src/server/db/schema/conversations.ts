@@ -1,4 +1,4 @@
-import { index, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
+import { index, integer, pgTable, text, timestamp, uuid } from 'drizzle-orm/pg-core';
 
 import { users } from './auth';
 
@@ -12,6 +12,7 @@ export const conversations = pgTable(
     characterId: text('character_id').notNull(),
     title: text('title'),
     lastMessagePreview: text('last_message_preview'),
+    roundTripCount: integer('round_trip_count').notNull().default(0),
     lastMessageAt: timestamp('last_message_at', { withTimezone: true }).notNull(),
     createdAt: timestamp('created_at', { withTimezone: true }).notNull().defaultNow(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).notNull().defaultNow(),

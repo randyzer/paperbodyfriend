@@ -12,6 +12,7 @@
 - 每日情话批量发送最初是严格串行，用户多时会明显延迟。现在已改成有限并发，默认并发数为 `3`。
 - 第三方脚本接入（Plausible、Google Analytics、Clarity、Crisp）统一从全局 [src/app/layout.tsx](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/app/layout.tsx:1) 进入，不要分散到各页面重复挂载。
 - 首页或其他页面如果自己再写 `min-h-screen`，会把全局 footer 挤到下一屏，导致“联系我们”看起来像没加。吸底布局生效后，要检查页面根节点高度类名是否冲突。
+- Creem 支付线上联调时，`CREEM_TEST_MODE=true`、`APP_BASE_URL=https://www.paperboyfriend.shop`、Webhook 路径 `/api/creem/webhook` 三者必须同时正确，否则最容易出现 `Checkout service unavailable`、支付成功但订阅状态不更新、或回跳校验失败。
 
 ## 最近几天已经完成的能力
 
@@ -68,6 +69,18 @@
   - Microsoft Clarity
 - 当前实现是直接在全局 `<head>` 中统一注入，避免页面级重复接入。
 
+### 支付与订阅
+
+- 已接入 Creem Checkout，当前按**单一产品**模式运行。
+- 已提供：
+  - `/pricing`
+  - `/billing/success`
+  - `/api/creem/checkout`
+  - `/api/creem/webhook`
+  - `/api/billing/status`
+- 订阅最终是否开通，以 webhook 同步数据库结果为准，不以前端回跳页单独为准。
+- 当前已确认线上 Test Mode 闭环可用：支付成功后，订阅状态可同步为“已开通”。
+
 ## 开始任务前必须先检查什么
 
 ### 工程基线
@@ -89,6 +102,10 @@
   - `RESEND_FROM_EMAIL`
   - `APP_BASE_URL`
   - `CRON_SECRET`
+  - `CREEM_API_KEY`
+  - `CREEM_WEBHOOK_SECRET`
+  - `CREEM_PRODUCT_ID`
+  - `CREEM_TEST_MODE`
   - `R2_ENDPOINT`
   - `R2_ACCESS_KEY_ID`
   - `R2_SECRET_ACCESS_KEY`
@@ -108,6 +125,19 @@
 - `RESEND_FROM_EMAIL` 必须和 Resend 已验证域名匹配。
 - `APP_BASE_URL` 应尽量使用正式访问域名，不要长期用 `vercel.app`，否则会拖送达率。
 - 判断“邮件功能是否正常”时，优先看 Resend 后台发送状态，而不是只看收件箱。
+
+### 支付
+
+- 线上如果要继续用 Creem **Test Mode**，必须显式配置：
+  - `CREEM_TEST_MODE=true`
+- 不要以为“线上环境默认会沿用测试模式”。当前实现里，如果不显式设置，Vercel 生产环境会默认按 `live` 逻辑调用 API。
+- `APP_BASE_URL` 必须是当前线上真实站点域名，例如：
+  - `https://www.paperboyfriend.shop`
+- Creem webhook 路径必须精确使用：
+  - `/api/creem/webhook`
+- 不要写成：
+  - `/api/webhooks/creem`
+- Checkout、Return URL、Webhook 最好统一在**同一个公网环境**联调；不要混着用“本地页面 + 线上 webhook”来判断状态。
 
 ### 第三方脚本
 
@@ -361,6 +391,90 @@
 - 当前 [src/components/crisp-chat.tsx](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/components/crisp-chat.tsx:1) 已通过固定脚本 `id` 的方式避免重复插入
 - 后续新增类似脚本组件时，优先复用这个模式
 
+### 12. Creem 支付成功了，但网站显示“校验失败”或“未开通”
+
+**现象 A：支付成功回跳后显示“支付结果校验失败”**
+
+- Creem 页面显示支付成功
+- 但站内 [src/app/billing/success/page.tsx](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/app/billing/success/page.tsx:1) 提示“支付结果校验失败”
+
+**根因**
+
+- Creem 官方文档里关于 return URL 签名算法的描述不完全一致
+- 实测真实回跳参数命中的并不是单一“HMAC-SHA256 + 排序 + `&` 拼接”算法
+- 另外，如果前端/服务端重排了 query 参数顺序，也可能把旧算法签名破坏掉
+
+**正确做法**
+
+- 当前项目已经兼容两种 Creem 回跳签名格式
+- 回跳页签名校验要尽量基于原始 `URLSearchParams` 顺序处理，不要随意重排参数
+
+**现象 B：Creem 已支付成功，但 `/pricing` 仍显示未开通或待支付**
+
+- 回跳页可能已显示“支付已返回，正在确认订阅状态”
+- 但返回订阅页仍然看到：
+  - `待完成支付`
+  - 或未开通
+
+**根因**
+
+- 站内订阅状态读的是本地数据库
+- 真正把 `pending` 更新成 `active/completed` 的是：
+  - `/api/creem/webhook`
+- 如果 webhook 没打进来，数据库就不会更新
+
+**最常见触发场景**
+
+- 在 `localhost` 做支付测试
+- 或 webhook URL 填成了错误路径
+- 或线上仍在用 Test Mode，但没显式配置 `CREEM_TEST_MODE=true`
+
+**正确做法**
+
+- `localhost` 可以验证回跳页，但**不能指望 webhook 自动更新本地状态**
+- 要验证完整状态同步，必须满足：
+  - Webhook URL 正确：
+    - `https://www.paperboyfriend.shop/api/creem/webhook`
+  - 站点是公网可访问环境
+  - `CREEM_TEST_MODE=true`
+  - `APP_BASE_URL=https://www.paperboyfriend.shop`
+
+**经验结论**
+
+- “支付成功”和“订阅状态已开通”是两步
+- 第一步看 checkout / return
+- 第二步看 webhook 是否真的落库
+
+### 13. Vercel 线上点击订阅出现 `Checkout service unavailable`
+
+**现象**
+
+- 本地 checkout 正常
+- 部署到 Vercel 后，点击“立即开通”前端提示：
+  - `Checkout service unavailable`
+
+**高概率根因**
+
+- 线上环境没有显式设置：
+  - `CREEM_TEST_MODE=true`
+- 导致 Vercel 生产环境默认按 `live` API 走
+- 但项目实际配置的仍然是 test key / test product，所以 checkout 创建失败
+
+**正确做法**
+
+- 线上测试模式至少要确认这四项：
+  - `CREEM_TEST_MODE=true`
+  - `CREEM_API_KEY=<test key>`
+  - `CREEM_PRODUCT_ID=<test product id>`
+  - `APP_BASE_URL=https://www.paperboyfriend.shop`
+
+**当前项目已确认可用的组合**
+
+- `CREEM_TEST_MODE=true`
+- `APP_BASE_URL=https://www.paperboyfriend.shop`
+- `Webhook URL=https://www.paperboyfriend.shop/api/creem/webhook`
+- 这套组合下，线上支付成功后，订阅状态已能同步显示“已开通”
+
 ## 当前稳定约束
 
 - 页面只做渲染和交互，不直接碰数据库、认证、R2、邮件。
@@ -375,6 +489,10 @@
 - 学习阶段的定时任务统一走 `cron-job.org`。
 - 网站级第三方脚本统一放到全局 layout；页面级只放真正和当前页面强耦合的逻辑。
 - 改全局 footer 或 layout 后，要回头检查首页、聊天页等页面是否还有自己的整屏高度类名。
+- Creem 支付状态判断必须区分：
+  - checkout 创建成功
+  - return_url 签名通过
+  - webhook 是否真实落库
 
 ## 排查顺序建议
 
@@ -415,6 +533,16 @@
    - 是否被重复挂载
    - 是否只是被页面高度/布局问题遮住了
 
+### 遇到支付/订阅问题
+
+1. 先看 `/api/creem/checkout` 是不是已经成功创建 checkout
+2. 再看回跳页是：
+   - 签名校验失败
+   - 还是“等待 webhook 同步”
+3. 再看 webhook URL 是否精确为 `/api/creem/webhook`
+4. 再看当前环境是否显式设置了 `CREEM_TEST_MODE=true`
+5. 最后查数据库里的 checkout/subscription 状态，不要只看前端文案
+
 ## 关键文件索引
 
 ### 认证
@@ -443,6 +571,20 @@
 - [src/lib/email.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/lib/email.ts:1)
 - [src/lib/ai/services/love-letter-service.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/lib/ai/services/love-letter-service.ts:1)
 - [src/app/api/cron/daily-email/route.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/app/api/cron/daily-email/route.ts:1)
+
+### 支付与订阅
+
+- [src/app/pricing/page.tsx](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/app/pricing/page.tsx:1)
+- [src/app/billing/success/page.tsx](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/app/billing/success/page.tsx:1)
+- [src/app/api/creem/checkout/route.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/app/api/creem/checkout/route.ts:1)
+- [src/app/api/creem/webhook/route.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/app/api/creem/webhook/route.ts:1)
+- [src/app/api/billing/status/route.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/app/api/billing/status/route.ts:1)
+- [src/server/creem/client.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/server/creem/client.ts:1)
+- [src/server/creem/service.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/server/creem/service.ts:1)
+- [src/server/creem/route-handlers.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/server/creem/route-handlers.ts:1)
+- [src/server/creem/signatures.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/server/creem/signatures.ts:1)
+- [src/server/creem/return-url.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/server/creem/return-url.ts:1)
+- [src/server/db/schema/billing.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/server/db/schema/billing.ts:1)
 
 ### 布局、联系页与第三方脚本
 

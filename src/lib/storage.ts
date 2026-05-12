@@ -129,6 +129,44 @@ export function clearConversationStateForUser(userId: string): void {
   removeItem(chatHistoryKey);
 }
 
+export function saveAnonymousSelectedCharacter(characterId: string): void {
+  saveItem(STORAGE_KEYS.ANON_SELECTED_CHARACTER, characterId);
+}
+
+export function getAnonymousSelectedCharacter(): string | null {
+  return getItem(STORAGE_KEYS.ANON_SELECTED_CHARACTER);
+}
+
+export function saveAnonymousConversationId(conversationId: string): void {
+  saveItem(STORAGE_KEYS.ANON_CONVERSATION_ID, conversationId);
+}
+
+export function getAnonymousConversationId(): string | null {
+  return getItem(STORAGE_KEYS.ANON_CONVERSATION_ID);
+}
+
+export function saveAnonymousChatHistory(messages: ChatMessage[]): void {
+  const limitedMessages = messages.slice(-100);
+  saveItem(STORAGE_KEYS.ANON_CHAT_HISTORY, JSON.stringify(limitedMessages));
+}
+
+export function getAnonymousChatHistory(): ChatMessage[] {
+  const data = getItem(STORAGE_KEYS.ANON_CHAT_HISTORY);
+  if (!data) return [];
+
+  try {
+    return JSON.parse(data);
+  } catch {
+    return [];
+  }
+}
+
+export function clearAnonymousConversationState(): void {
+  removeItem(STORAGE_KEYS.ANON_SELECTED_CHARACTER);
+  removeItem(STORAGE_KEYS.ANON_CONVERSATION_ID);
+  removeItem(STORAGE_KEYS.ANON_CHAT_HISTORY);
+}
+
 export function migrateLegacyStorageToUser(userId: string): void {
   if (!hasLocalStorage()) return;
   if (!isValidUserId(userId)) return;
@@ -172,34 +210,27 @@ export function migrateLegacyStorageToUser(userId: string): void {
 
 // 保存选择的角色
 export function saveSelectedCharacter(characterId: string): void {
-  saveItem(STORAGE_KEYS.SELECTED_CHARACTER, characterId);
+  saveAnonymousSelectedCharacter(characterId);
 }
 
 // 获取选择的角色
 export function getSelectedCharacter(): string | null {
-  return getItem(STORAGE_KEYS.SELECTED_CHARACTER);
+  return getAnonymousSelectedCharacter();
 }
 
 // 保存聊天历史
 export function saveChatHistory(messages: ChatMessage[]): void {
-  const limitedMessages = messages.slice(-100);
-  saveItem(STORAGE_KEYS.CHAT_HISTORY, JSON.stringify(limitedMessages));
+  saveAnonymousChatHistory(messages);
 }
 
 // 获取聊天历史
 export function getChatHistory(): ChatMessage[] {
-  const data = getItem(STORAGE_KEYS.CHAT_HISTORY);
-  if (!data) return [];
-
-  try {
-    return JSON.parse(data);
-  } catch {
-    return [];
-  }
+  return getAnonymousChatHistory();
 }
 
 // 清除所有数据
 export function clearAllData(): void {
+  clearAnonymousConversationState();
   removeItem(STORAGE_KEYS.SELECTED_CHARACTER);
   removeItem(STORAGE_KEYS.CHAT_HISTORY);
   removeItem(STORAGE_KEYS.CONVERSATION_ID);

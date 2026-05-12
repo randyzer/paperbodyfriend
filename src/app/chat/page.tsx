@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
+import Link from 'next/link';
 import { useRouter } from 'next/navigation';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -10,9 +11,20 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { Send, Volume2, VolumeX, RefreshCw } from 'lucide-react';
 import { buildRequestedVideoPrompt } from '@/lib/ai/video-intent';
 import { CHARACTERS } from '@/lib/config';
+import { ChatLimitCard } from '@/components/chat/chat-limit-card';
 import { DEFAULT_CHARACTER_VIDEO_OPTIONS } from '@/lib/video-presets';
 import { UserAccountMenu } from '@/components/auth/user-account-menu';
 import { useAuthSession } from '@/hooks/use-auth-session';
+import { fetchWithTimeout } from '@/lib/fetch-with-timeout';
+import {
+  ANONYMOUS_MAX_ROUND_TRIPS,
+  FREE_MAX_ROUND_TRIPS,
+  getTierBadgeClassName,
+  getTierDescription,
+  getTierLabel,
+  resolveAccessTier,
+  type BillingStatusSnapshot,
+} from '@/lib/paid-access';
 import {
   CLIENT_VIDEO_POLL_INTERVAL_MS,
   CLIENT_VIDEO_POLL_MAX_ATTEMPTS,
@@ -24,11 +36,16 @@ import {
 } from '@/lib/video-jobs';
 import {
   ChatMessage,
+  clearAnonymousConversationState,
   clearConversationStateForUser,
+  getAnonymousChatHistory,
+  getAnonymousConversationId,
+  getAnonymousSelectedCharacter,
   getChatHistoryForUser,
   getConversationIdForUser,
   getSelectedCharacterForUser,
   markResumeSkipForUser,
+  saveAnonymousChatHistory,
   saveChatHistoryForUser,
 } from '@/lib/storage';
 
@@ -40,11 +57,14 @@ type ConversationDetailResponse = {
   messages: ChatMessage[];
 };
 
+type BillingStatusResponse = {
+  active: boolean;
+  currentPeriodEnd: string | null;
+};
+
 export default function ChatPage() {
   const router = useRouter();
-  const { isLoading: sessionLoading, authenticated, user } = useAuthSession({
-    required: true,
-  });
+  const { isLoading: sessionLoading, authenticated, user } = useAuthSession();
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [inputText, setInputText] = useState('');
   const [isLoading, setIsLoading] = useState(false);
@@ -54,38 +74,115 @@ export default function ChatPage() {
   const [initialized, setInitialized] = useState(false);
   const [isRestoringConversation, setIsRestoringConversation] = useState(true);
   const [messageCount, setMessageCount] = useState(0); // 追踪对话轮数
+  const [billingStatus, setBillingStatus] = useState<BillingStatusSnapshot | null>(null);
+  const [limitPrompt, setLimitPrompt] = useState<'login' | 'upgrade' | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const activeVideoPollsRef = useRef<Set<string>>(new Set());
   const hasResumedPendingVideosRef = useRef(false);
 
-  // 初始化 - 获取角色和历史
-  useEffect(() => {
-    if (!user) {
+  const getCurrentConversationId = () =>
+    user ? getConversationIdForUser(user.id) : getAnonymousConversationId();
+
+  const persistChatHistory = (nextMessages: ChatMessage[]) => {
+    if (user) {
+      saveChatHistoryForUser(user.id, nextMessages);
       return;
     }
 
-    const currentUser = user;
+    saveAnonymousChatHistory(nextMessages);
+  };
+
+  const clearCurrentConversationState = () => {
+    if (user) {
+      clearConversationStateForUser(user.id);
+      return;
+    }
+
+    clearAnonymousConversationState();
+  };
+
+  useEffect(() => {
+    if (sessionLoading) {
+      return;
+    }
+
+    if (!authenticated || !user) {
+      setBillingStatus(null);
+      return;
+    }
+
+    let active = true;
+
+    async function loadBillingStatus() {
+      try {
+        const response = await fetchWithTimeout('/api/billing/status', {
+          cache: 'no-store',
+          timeoutMs: 5_000,
+        });
+
+        if (!response.ok) {
+          throw new Error('Failed to load billing status');
+        }
+
+        const data = (await response.json()) as BillingStatusResponse;
+        if (!active) {
+          return;
+        }
+
+        setBillingStatus({
+          active: data.active,
+          currentPeriodEnd: data.currentPeriodEnd,
+        });
+      } catch {
+        if (active) {
+          setBillingStatus({
+            active: false,
+            currentPeriodEnd: null,
+          });
+        }
+      }
+    }
+
+    void loadBillingStatus();
+
+    return () => {
+      active = false;
+    };
+  }, [authenticated, sessionLoading, user]);
+
+  // 初始化 - 获取角色和历史
+  useEffect(() => {
+    if (sessionLoading) {
+      return;
+    }
+
     let active = true;
 
     async function loadConversationState() {
       setIsRestoringConversation(true);
       hasResumedPendingVideosRef.current = false;
 
-      const characterId = getSelectedCharacterForUser(currentUser.id);
-      const conversationId = getConversationIdForUser(currentUser.id);
-      const history = getChatHistoryForUser(currentUser.id);
+      const characterId = user
+        ? getSelectedCharacterForUser(user.id)
+        : getAnonymousSelectedCharacter();
+      const conversationId = user
+        ? getConversationIdForUser(user.id)
+        : getAnonymousConversationId();
+      const history = user
+        ? getChatHistoryForUser(user.id)
+        : getAnonymousChatHistory();
 
       if (!characterId || !conversationId) {
-        clearConversationStateForUser(currentUser.id);
+        clearCurrentConversationState();
         router.push('/');
         return;
       }
 
       const char = CHARACTERS[characterId as keyof typeof CHARACTERS];
       if (!char) {
-        clearConversationStateForUser(currentUser.id);
+        clearCurrentConversationState();
         router.push('/');
         return;
       }
@@ -96,6 +193,14 @@ export default function ChatPage() {
         setMessages(history);
         setMessageCount(history.filter(message => message.role === 'user').length);
         setInitialized(true);
+        setIsRestoringConversation(false);
+        return;
+      }
+
+      if (!user) {
+        setMessages([]);
+        setMessageCount(0);
+        setInitialized(false);
         setIsRestoringConversation(false);
         return;
       }
@@ -114,13 +219,13 @@ export default function ChatPage() {
           return;
         }
 
-        saveChatHistoryForUser(currentUser.id, data.messages);
+        saveChatHistoryForUser(user.id, data.messages);
         setMessages(data.messages);
         setMessageCount(data.messages.filter(message => message.role === 'user').length);
         setInitialized(data.messages.length > 0);
       } catch {
         if (active) {
-          clearConversationStateForUser(currentUser.id);
+          clearCurrentConversationState();
           router.push('/');
         }
       } finally {
@@ -135,7 +240,7 @@ export default function ChatPage() {
     return () => {
       active = false;
     };
-  }, [router, user]);
+  }, [router, sessionLoading, user]);
 
   // 发送初始问候 - 当character设置好且没有历史记录时
   useEffect(() => {
@@ -169,6 +274,28 @@ export default function ChatPage() {
     }
   }, [initialized, messages]);
 
+  useEffect(() => {
+    const tier = resolveAccessTier({
+      authenticated,
+      billingStatus,
+    });
+
+    if (tier === 'paid') {
+      setLimitPrompt(null);
+      return;
+    }
+
+    const maxRoundTrips =
+      tier === 'free' ? FREE_MAX_ROUND_TRIPS : ANONYMOUS_MAX_ROUND_TRIPS;
+
+    if (messageCount >= maxRoundTrips) {
+      setLimitPrompt(tier === 'free' ? 'upgrade' : 'login');
+      return;
+    }
+
+    setLimitPrompt(null);
+  }, [authenticated, billingStatus, messageCount]);
+
   // 获取天气信息（模拟）
   const getWeatherInfo = () => {
     const weathers = [
@@ -184,6 +311,11 @@ export default function ChatPage() {
   // 发送初始问候
   const sendInitialGreeting = async () => {
     if (!character) return;
+    const conversationId = getCurrentConversationId();
+    if (!conversationId) {
+      console.error('Conversation id is missing');
+      return;
+    }
 
     setIsLoading(true);
     
@@ -204,6 +336,7 @@ ${weather.advice}
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          conversationId,
           messages: [{ role: 'user', content: '打招呼' }],
           characterPrompt: systemPrompt,
         }),
@@ -255,9 +388,7 @@ ${weather.advice}
           ...initialMessage,
           content: finalText,
         }];
-        if (user) {
-          saveChatHistoryForUser(user.id, nextMessages);
-        }
+        persistChatHistory(nextMessages);
         setMessages(nextMessages);
         void syncConversationSnapshot(nextMessages);
         void generateTTS(initialMessage.id, finalText);
@@ -276,9 +407,7 @@ ${weather.advice}
       };
 
       setMessages([fallbackMessage]);
-      if (user) {
-        saveChatHistoryForUser(user.id, [fallbackMessage]);
-      }
+      persistChatHistory([fallbackMessage]);
       void syncConversationSnapshot([fallbackMessage]);
       generateTTS(fallbackMessage.id, fallbackMessage.content);
     } finally {
@@ -330,9 +459,7 @@ ${weather.advice}
       const nextMessages = prev.map(message =>
         message.id === messageId ? updater(message) : message,
       );
-      if (user) {
-        saveChatHistoryForUser(user.id, nextMessages);
-      }
+      persistChatHistory(nextMessages);
       void syncConversationSnapshot(nextMessages);
       return nextMessages;
     });
@@ -433,9 +560,7 @@ ${weather.advice}
         
         setMessages(prev => {
           const newMessages = [...prev, imageMessage];
-          if (user) {
-            saveChatHistoryForUser(user.id, newMessages);
-          }
+          persistChatHistory(newMessages);
           void syncConversationSnapshot(newMessages);
           return newMessages;
         });
@@ -470,9 +595,7 @@ ${weather.advice}
 
     setMessages(prev => {
       const newMessages = [...prev, pendingMessage];
-      if (user) {
-        saveChatHistoryForUser(user.id, newMessages);
-      }
+      persistChatHistory(newMessages);
       void syncConversationSnapshot(newMessages);
       return newMessages;
     });
@@ -653,6 +776,13 @@ ${weather.advice}
   // 发送消息
   const handleSendMessage = async () => {
     if (!inputText.trim() || isLoading || !character) return;
+    const conversationId = getCurrentConversationId();
+    if (!conversationId) {
+      console.error('Conversation id is missing');
+      return;
+    }
+    const previousMessages = messages;
+    const previousMessageCount = messageCount;
 
     const userMessage: ChatMessage = {
       id: `msg_${Date.now()}_user`,
@@ -664,9 +794,7 @@ ${weather.advice}
 
     const newMessages = [...messages, userMessage];
     setMessages(newMessages);
-    if (user) {
-      saveChatHistoryForUser(user.id, newMessages);
-    }
+    persistChatHistory(newMessages);
     void syncConversationSnapshot(newMessages);
     
     setInputText('');
@@ -688,13 +816,38 @@ ${weather.advice}
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          conversationId,
           messages: chatMessages,
           characterPrompt: character.prompt,
           messageCount: newCount,
         }),
       });
 
-      if (!response.ok) throw new Error('请求失败');
+      if (!response.ok) {
+        const payload = (await response.json().catch(() => null)) as
+          | { error?: string; code?: string }
+          | null;
+
+        if (payload?.code === 'ANON_CHAT_LIMIT_REACHED') {
+          setMessages(previousMessages);
+          persistChatHistory(previousMessages);
+          setMessageCount(previousMessageCount);
+          setLimitPrompt('login');
+          return;
+        }
+
+        if (payload?.code === 'FREE_CHAT_LIMIT_REACHED') {
+          setMessages(previousMessages);
+          persistChatHistory(previousMessages);
+          setMessageCount(previousMessageCount);
+          setLimitPrompt('upgrade');
+          return;
+        }
+
+        throw new Error(payload?.error ?? '请求失败');
+      }
+
+      setLimitPrompt(null);
 
       const reader = response.body?.getReader();
       if (!reader) throw new Error('无法读取响应');
@@ -745,9 +898,7 @@ ${weather.advice}
         generateTTS(assistantMessage.id, finalText);
         
         setMessages(prev => {
-          if (user) {
-            saveChatHistoryForUser(user.id, prev);
-          }
+          persistChatHistory(prev);
           void syncConversationSnapshot(prev);
           return prev;
         });
@@ -775,9 +926,7 @@ ${weather.advice}
           timestamp: Date.now(),
           type: 'text' as const,
         }];
-        if (user) {
-          saveChatHistoryForUser(user.id, nextMessages);
-        }
+        persistChatHistory(nextMessages);
         void syncConversationSnapshot(nextMessages);
         return nextMessages;
       });
@@ -789,21 +938,35 @@ ${weather.advice}
   // 重置
   const handleReset = () => {
     if (confirm('确定要重新选择角色吗？聊天记录将被清空。')) {
+      setLimitPrompt(null);
       if (user) {
         markResumeSkipForUser(user.id);
         clearConversationStateForUser(user.id);
+      } else {
+        clearAnonymousConversationState();
       }
       router.push('/');
     }
   };
 
-  if (sessionLoading || !authenticated || !character || isRestoringConversation) {
+  if (sessionLoading || !character || isRestoringConversation) {
     return (
       <div className="min-h-screen flex items-center justify-center bg-pink-50">
         <p className="text-sm text-gray-500">正在准备对话...</p>
       </div>
     );
   }
+
+  const currentTier = resolveAccessTier({
+    authenticated,
+    billingStatus,
+  });
+  const currentLimit =
+    currentTier === 'paid'
+      ? null
+      : currentTier === 'free'
+        ? FREE_MAX_ROUND_TRIPS
+        : ANONYMOUS_MAX_ROUND_TRIPS;
 
   return (
     <div className="h-screen flex flex-col bg-gray-100">
@@ -826,6 +989,21 @@ ${weather.advice}
         </div>
         
         <div className="flex items-center gap-2">
+          <div className="hidden items-center gap-2 md:flex">
+            <Badge className={getTierBadgeClassName(currentTier)}>
+              {getTierLabel(currentTier)}
+            </Badge>
+            <span className="text-xs text-gray-500">
+              {currentLimit === null
+                ? '无限次使用'
+                : `本局已使用 ${messageCount}/${currentLimit} 轮`}
+            </span>
+            {currentTier === 'free' ? (
+              <Button asChild size="sm" variant="outline">
+                <Link href="/pricing">升级会员</Link>
+              </Button>
+            ) : null}
+          </div>
           {user ? (
             <UserAccountMenu
               displayName={user.displayName}
@@ -935,23 +1113,44 @@ ${weather.advice}
 
       {/* 输入区域 */}
       <div className="bg-white border-t px-4 py-3">
-        <div className="max-w-2xl mx-auto flex items-center gap-2">
+        <div className="max-w-2xl mx-auto space-y-3">
+          <div className="flex items-center justify-between gap-3 md:hidden">
+            <Badge className={getTierBadgeClassName(currentTier)}>
+              {getTierLabel(currentTier)}
+            </Badge>
+            <span className="text-xs text-gray-500">
+              {currentLimit === null
+                ? '无限次使用'
+                : `本局已使用 ${messageCount}/${currentLimit} 轮`}
+            </span>
+          </div>
+
+          {limitPrompt ? <ChatLimitCard mode={limitPrompt} /> : null}
+
+          <div className="flex items-center gap-2">
           <Input
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
-            placeholder="发送消息..."
-            disabled={isLoading}
+            placeholder={
+              limitPrompt
+                ? limitPrompt === 'login'
+                  ? '登录后可继续聊天'
+                  : '升级会员后可继续聊天'
+                : '发送消息...'
+            }
+            disabled={isLoading || Boolean(limitPrompt)}
             className="flex-1"
           />
           
           <Button 
             onClick={handleSendMessage}
-            disabled={!inputText.trim() || isLoading}
+            disabled={!inputText.trim() || isLoading || Boolean(limitPrompt)}
             className="bg-pink-500 hover:bg-pink-600 shrink-0"
           >
             <Send className="w-5 h-5" />
           </Button>
+        </div>
         </div>
       </div>
     </div>
