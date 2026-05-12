@@ -10,6 +10,8 @@
 - Resend 后台显示 `Delivered`，就说明代码链路和 API 配置基本是通的；“用户没在收件箱看到”通常已经是送达率或垃圾邮件问题，不是注册逻辑故障。
 - `cron-job.org` 和 Vercel Cron 不要同时开，否则同一批用户会被重复触发，收到两封邮件。
 - 每日情话批量发送最初是严格串行，用户多时会明显延迟。现在已改成有限并发，默认并发数为 `3`。
+- 第三方脚本接入（Plausible、Google Analytics、Clarity、Crisp）统一从全局 [src/app/layout.tsx](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/app/layout.tsx:1) 进入，不要分散到各页面重复挂载。
+- 首页或其他页面如果自己再写 `min-h-screen`，会把全局 footer 挤到下一屏，导致“联系我们”看起来像没加。吸底布局生效后，要检查页面根节点高度类名是否冲突。
 
 ## 最近几天已经完成的能力
 
@@ -50,6 +52,22 @@
   - `/api/cron/daily-email`
 - 当前学习阶段的推荐调度方式是 `cron-job.org`，不再使用项目内的 Vercel Cron 配置。
 
+### 联系与客服
+
+- 已提供全局“联系我们”入口，目标页面为 `/contact`。
+- 联系页已包含：
+  - 邮箱：`feedback@paperboyfriend.shop`
+  - Discord：`https://discord.gg/9vTtjzt2`
+- Crisp 在线聊天脚本已接入全局 layout，网站级配置通过 `NEXT_PUBLIC_CRISP_WEBSITE_ID` 控制。
+
+### 数据分析与追踪
+
+- 已在全局 layout 接入三套统计/行为脚本：
+  - Plausible
+  - Google Analytics (`gtag.js`)
+  - Microsoft Clarity
+- 当前实现是直接在全局 `<head>` 中统一注入，避免页面级重复接入。
+
 ## 开始任务前必须先检查什么
 
 ### 工程基线
@@ -65,6 +83,7 @@
   - `DATABASE_URL`
   - `DATABASE_URL_UNPOOLED`
   - `TURNSTILE_SECRET_KEY`
+  - `NEXT_PUBLIC_CRISP_WEBSITE_ID`
   - `NEXT_PUBLIC_TURNSTILE_SITE_KEY`
   - `RESEND_API_KEY`
   - `RESEND_FROM_EMAIL`
@@ -89,6 +108,12 @@
 - `RESEND_FROM_EMAIL` 必须和 Resend 已验证域名匹配。
 - `APP_BASE_URL` 应尽量使用正式访问域名，不要长期用 `vercel.app`，否则会拖送达率。
 - 判断“邮件功能是否正常”时，优先看 Resend 后台发送状态，而不是只看收件箱。
+
+### 第三方脚本
+
+- 统计脚本、客服脚本统一放在全局 layout，不要散落到首页、聊天页等单独页面。
+- `Crisp` 依赖 `NEXT_PUBLIC_CRISP_WEBSITE_ID`，本地和线上都要检查是否已配置。
+- 同一类脚本尽量只挂一次，避免开发态热更新或重复挂载导致双初始化。
 
 ## 已确认踩过的坑
 
@@ -288,6 +313,54 @@
   - Resend 发送时间
   - 收件箱实际出现时间
 
+### 9. 全局 footer 已经加了，但首页仍然要下拉才能看到“联系我们”
+
+**现象**
+
+- 全局 layout 已经有 footer
+- 首页仍然需要往下滚，才看到“联系我们”
+
+**根因**
+
+- layout 已经改成了吸底结构：
+  - `body` 使用 `flex min-h-screen flex-col`
+  - `main` 使用 `flex-1`
+- 但首页自身仍然写了 `min-h-screen`
+- 结果变成“页面内容自己先占满一整屏，footer 再被挤到下一屏”
+
+**正确做法**
+
+- 吸底 footer 生效后，要检查页面根节点是否还在额外使用 `min-h-screen`
+- 当前首页已经改成和 layout 兼容的 `h-full min-h-full`
+
+### 10. 第三方脚本接入位置不统一，后面很容易重复挂载
+
+**现象**
+
+- 统计、客服脚本需求越来越多：
+  - Plausible
+  - Google Analytics
+  - Clarity
+  - Crisp
+- 如果各自接在不同页面，后续很容易重复挂载、初始化多次，排查也很乱
+
+**正确做法**
+
+- 所有“网站级脚本”统一从 [src/app/layout.tsx](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/app/layout.tsx:1) 接入
+- 客服类脚本用独立组件更清晰，比如 [src/components/crisp-chat.tsx](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/components/crisp-chat.tsx:1)
+- 统计类脚本统一放在 `<head>`，减少页面级散落
+
+### 11. Crisp 脚本开发态可能重复插入
+
+**现象**
+
+- React 开发态热更新或组件重新挂载时，第三方脚本可能被重复插入
+
+**正确做法**
+
+- 当前 [src/components/crisp-chat.tsx](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/components/crisp-chat.tsx:1) 已通过固定脚本 `id` 的方式避免重复插入
+- 后续新增类似脚本组件时，优先复用这个模式
+
 ## 当前稳定约束
 
 - 页面只做渲染和交互，不直接碰数据库、认证、R2、邮件。
@@ -300,6 +373,8 @@
   - 用户是否在收件箱看到
 - 批量任务默认不要无限并发，先做有限并发。
 - 学习阶段的定时任务统一走 `cron-job.org`。
+- 网站级第三方脚本统一放到全局 layout；页面级只放真正和当前页面强耦合的逻辑。
+- 改全局 footer 或 layout 后，要回头检查首页、聊天页等页面是否还有自己的整屏高度类名。
 
 ## 排查顺序建议
 
@@ -330,6 +405,16 @@
 3. 再看 `cron-job.org` 的执行日志
 4. 最后才排查邮件发送本身
 
+### 遇到第三方脚本问题
+
+1. 先确认脚本是否应该是“网站级能力”还是“页面级能力”
+2. 网站级能力优先查 [src/app/layout.tsx](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/app/layout.tsx:1)
+3. 客服脚本优先查对应组件，例如 [src/components/crisp-chat.tsx](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/components/crisp-chat.tsx:1)
+4. 如果是前端看起来“没生效”，优先排查：
+   - 环境变量是否存在
+   - 是否被重复挂载
+   - 是否只是被页面高度/布局问题遮住了
+
 ## 关键文件索引
 
 ### 认证
@@ -358,6 +443,12 @@
 - [src/lib/email.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/lib/email.ts:1)
 - [src/lib/ai/services/love-letter-service.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/lib/ai/services/love-letter-service.ts:1)
 - [src/app/api/cron/daily-email/route.ts](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/app/api/cron/daily-email/route.ts:1)
+
+### 布局、联系页与第三方脚本
+
+- [src/app/layout.tsx](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/app/layout.tsx:1)
+- [src/app/contact/page.tsx](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/app/contact/page.tsx:1)
+- [src/components/crisp-chat.tsx](/Users/randyz/work/coding/deepsea_III/project/3st_demo_paperboyfriend/src/components/crisp-chat.tsx:1)
 
 ### 环境变量与构建
 

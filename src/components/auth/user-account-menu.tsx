@@ -1,8 +1,9 @@
 'use client';
 
+import Link from 'next/link';
 import { useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
-import { ImageUp, LogOut } from 'lucide-react';
+import { CreditCard, ImageUp, LogOut } from 'lucide-react';
 import { toast } from 'sonner';
 
 import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
@@ -136,6 +137,13 @@ export function UserAccountMenu({
         </div>
 
         <DropdownMenuSeparator />
+
+        <DropdownMenuItem asChild className="rounded-xl px-3 py-2 text-sm">
+          <Link href="/pricing">
+            <CreditCard className="size-4" />
+            会员订阅
+          </Link>
+        </DropdownMenuItem>
 
         <DropdownMenuItem
           disabled={isUploadingAvatar}
