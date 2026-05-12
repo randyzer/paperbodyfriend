@@ -1,4 +1,5 @@
 import { createConversationService } from './conversation-service';
+import { createConversationRepository } from './conversation-repository';
 
 let cachedConversationService: ReturnType<typeof createConversationService> | null = null;
 const testGlobals = globalThis as typeof globalThis & {
@@ -34,7 +35,6 @@ export function getConversationService() {
     return cachedConversationService;
   }
 
-  const { createConversationRepository } = require('./conversation-repository') as typeof import('./conversation-repository');
   cachedConversationService = createConversationService({
     repository: createConversationRepository(),
   });

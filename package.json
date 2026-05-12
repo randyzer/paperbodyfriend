@@ -18,7 +18,7 @@
     "test:chat-route": "node --import tsx scripts/chat-route.test.ts",
     "test:paid-access": "node --import tsx scripts/homepage-pricing.test.ts && node --import tsx scripts/chat-limit-card.test.ts",
     "test:creem": "node --import tsx scripts/creem-signatures.test.ts && node --import tsx scripts/creem-route-handlers.test.ts && node --import tsx scripts/creem-return-state.test.ts",
-    "test:conversation": "node --import tsx scripts/conversation-storage.test.ts && node --import tsx scripts/chat-page-storage.test.ts && node --import tsx scripts/conversation-service.test.ts && node --import tsx scripts/conversation-route-handlers.test.ts",
+    "test:conversation": "node --import tsx scripts/conversation-storage.test.ts && node --import tsx scripts/chat-page-storage.test.ts && node --import tsx scripts/conversation-service.test.ts && node --import tsx scripts/default-conversation-service.test.ts && node --import tsx scripts/conversation-route-handlers.test.ts",
     "test:cron": "node --import tsx scripts/daily-email-cron-route.test.ts",
     "test:image-route": "node --import tsx scripts/image-route-handler.test.ts",
     "test:media-routes": "node --import tsx scripts/image-route-handler.test.ts && node --import tsx scripts/video-route-handler.test.ts && node --import tsx scripts/tts-route-handler.test.ts"
