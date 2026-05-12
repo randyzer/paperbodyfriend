@@ -76,6 +76,7 @@ export default function ChatPage() {
   const [messageCount, setMessageCount] = useState(0); // 追踪对话轮数
   const [billingStatus, setBillingStatus] = useState<BillingStatusSnapshot | null>(null);
   const [limitPrompt, setLimitPrompt] = useState<'login' | 'upgrade' | null>(null);
+  const [chatError, setChatError] = useState<string | null>(null);
   
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const audioRef = useRef<HTMLAudioElement | null>(null);
@@ -280,21 +281,15 @@ export default function ChatPage() {
       billingStatus,
     });
 
-    if (tier === 'paid') {
+    if (tier === 'paid' && limitPrompt === 'upgrade') {
       setLimitPrompt(null);
       return;
     }
 
-    const maxRoundTrips =
-      tier === 'free' ? FREE_MAX_ROUND_TRIPS : ANONYMOUS_MAX_ROUND_TRIPS;
-
-    if (messageCount >= maxRoundTrips) {
-      setLimitPrompt(tier === 'free' ? 'upgrade' : 'login');
-      return;
+    if (tier !== 'anonymous' && limitPrompt === 'login') {
+      setLimitPrompt(null);
     }
-
-    setLimitPrompt(null);
-  }, [authenticated, billingStatus, messageCount]);
+  }, [authenticated, billingStatus, limitPrompt]);
 
   // 获取天气信息（模拟）
   const getWeatherInfo = () => {
@@ -799,6 +794,7 @@ ${weather.advice}
     
     setInputText('');
     setIsLoading(true);
+    setChatError(null);
 
     // 更新对话轮数
     const newCount = messageCount + 1;
@@ -831,7 +827,9 @@ ${weather.advice}
         if (payload?.code === 'ANON_CHAT_LIMIT_REACHED') {
           setMessages(previousMessages);
           persistChatHistory(previousMessages);
+          void syncConversationSnapshot(previousMessages);
           setMessageCount(previousMessageCount);
+          setChatError(null);
           setLimitPrompt('login');
           return;
         }
@@ -839,7 +837,9 @@ ${weather.advice}
         if (payload?.code === 'FREE_CHAT_LIMIT_REACHED') {
           setMessages(previousMessages);
           persistChatHistory(previousMessages);
+          void syncConversationSnapshot(previousMessages);
           setMessageCount(previousMessageCount);
+          setChatError(null);
           setLimitPrompt('upgrade');
           return;
         }
@@ -918,18 +918,12 @@ ${weather.advice}
       }
     } catch (error) {
       console.error('Chat error:', error);
-      setMessages(prev => {
-        const nextMessages = [...prev, {
-          id: `msg_${Date.now()}_error`,
-          role: 'assistant' as const,
-          content: '抱歉，能再说一次吗？',
-          timestamp: Date.now(),
-          type: 'text' as const,
-        }];
-        persistChatHistory(nextMessages);
-        void syncConversationSnapshot(nextMessages);
-        return nextMessages;
-      });
+      setMessages(previousMessages);
+      persistChatHistory(previousMessages);
+      void syncConversationSnapshot(previousMessages);
+      setMessageCount(previousMessageCount);
+      setInputText(userMessage.content);
+      setChatError('发送失败，请稍后重试。');
     } finally {
       setIsLoading(false);
     }
@@ -1126,11 +1120,21 @@ ${weather.advice}
           </div>
 
           {limitPrompt ? <ChatLimitCard mode={limitPrompt} /> : null}
+          {chatError ? (
+            <p className="text-sm text-red-500" role="alert">
+              {chatError}
+            </p>
+          ) : null}
 
           <div className="flex items-center gap-2">
           <Input
             value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
+            onChange={(e) => {
+              setInputText(e.target.value);
+              if (chatError) {
+                setChatError(null);
+              }
+            }}
             onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
             placeholder={
               limitPrompt
